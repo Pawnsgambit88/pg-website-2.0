@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* clip (not hidden) keeps overflow visually clipped without creating a BFC,
+   so html's scroll-snap-type propagates down to the sections correctly */
+main {
+  overflow-x: clip;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+h1, h2, h3, h4, h5, h6, .pg-heading {
+  font-family: 'Book Antiqua', 'Palatino Linotype', Palatino, serif;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.pg-desc, .pg-desc p {
+  font-family: 'Times New Roman', Times, serif;
+  font-weight: 500;
+}
+
+button, .pg-ui {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #069494;
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 7px; }
+::-webkit-scrollbar-track { background: #f1f2f4; }
+::-webkit-scrollbar-thumb { background: #c8ccd2; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #adb2ba; }
+
+/* Lightbox overlay */
+.lightbox-overlay {
+  backdrop-filter: blur(8px);
+}
+
+/* ─── Homepage 3D animations ─────────────────────────────────────────────── */
+@keyframes pg-float {
+  0%, 100% { transform: translateY(0px) rotate(0.4deg); }
+  50%       { transform: translateY(-22px) rotate(-0.4deg); }
+}
+@keyframes pg-float-slow {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-10px); }
+}
+@keyframes pg-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+@keyframes pg-pulse-glow {
+  0%, 100% { opacity: 0.12; transform: scale(1); }
+  50%      { opacity: 0.28; transform: scale(1.1); }
+}
+@keyframes pg-spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
