@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "exceptions": [
+    {
+      "id": "EXC-0001",
+      "type": "license",
+      "package": "gsap",
+      "version": "3.15.0",
+      "license": "Standard 'no charge' license: https://gsap.com/standard-license.",
+      "licenseUrl": "https://gsap.com/standard-license",
+      "scope": "prod",
+      "decision": "DEC-029",
+      "reason": "GSAP core is the owner-approved editorial motion library for the Home page (DEC-029). It is not MIT: GreenSock's Standard No Charge licence permits commercial use; the restrictions (no use in tools competing with visual animation builders, no redistribution of modified copies as a competing library) do not apply to this site.",
+      "mitigation": "Pinned exact version, no install script, no dependencies. Imported only from src/components/ui/motion/gsap/** (ESLint no-restricted-imports plus dependency-cruiser rule); lazy chunk only, never in First Load JS. CSS Reveal remains the fallback if the exception is not renewed.",
+      "owner": "ThugNinja",
+      "approvedBy": "PENDING-owner-licence-review",
+      "created": "2026-10-23",
+      "expires": "2027-04-21",
+      "reviewBy": "2027-04-21",
+      "tracking": "docs/decisions/2026-10-23-gsap-motion-library.md"
+    }
+  ]
+}

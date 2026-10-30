@@ -1,0 +1,639 @@
+{
+  "numTotalTestSuites": 19,
+  "numPassedTestSuites": 19,
+  "numFailedTestSuites": 0,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 52,
+  "numPassedTests": 52,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1793259052274,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["reserveFreeInput"],
+          "fullName": "reserveFreeInput sends intent only: the slug, no price or currency",
+          "status": "passed",
+          "title": "sends intent only: the slug, no price or currency",
+          "duration": 2.8536,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeFreeFailure"],
+          "fullName": "describeFreeFailure treats ALREADY_REGISTERED as settled (show the server state, not an error)",
+          "status": "passed",
+          "title": "treats ALREADY_REGISTERED as settled (show the server state, not an error)",
+          "duration": 0.2831000000000188,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeFreeFailure"],
+          "fullName": "describeFreeFailure EVENT_FULL moves to the matching screen",
+          "status": "passed",
+          "title": "EVENT_FULL moves to the matching screen",
+          "duration": 0.3282000000000096,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeFreeFailure"],
+          "fullName": "describeFreeFailure REGISTRATION_CLOSED moves to the matching screen",
+          "status": "passed",
+          "title": "REGISTRATION_CLOSED moves to the matching screen",
+          "duration": 0.13509999999999422,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeFreeFailure"],
+          "fullName": "describeFreeFailure REGISTRATION_NOT_OPEN moves to the matching screen",
+          "status": "passed",
+          "title": "REGISTRATION_NOT_OPEN moves to the matching screen",
+          "duration": 0.1144000000000176,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeFreeFailure"],
+          "fullName": "describeFreeFailure recognises an incomplete profile from the VALIDATION_FAILED profile field",
+          "status": "passed",
+          "title": "recognises an incomplete profile from the VALIDATION_FAILED profile field",
+          "duration": 0.1606000000000165,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeFreeFailure"],
+          "fullName": "describeFreeFailure keeps the page and allows a retry for network and server failures",
+          "status": "passed",
+          "title": "keeps the page and allows a retry for network and server failures",
+          "duration": 0.143100000000004,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeFreeFailure"],
+          "fullName": "describeFreeFailure never shows raw server detail",
+          "status": "passed",
+          "title": "never shows raw server detail",
+          "duration": 0.21180000000001087,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["availabilityRowText"],
+          "fullName": "availabilityRowText shows places left for a limited event",
+          "status": "passed",
+          "title": "shows places left for a limited event",
+          "duration": 1.1388000000000034,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["availabilityRowText"],
+          "fullName": "availabilityRowText hides the sentinel count when the event is unlimited",
+          "status": "passed",
+          "title": "hides the sentinel count when the event is unlimited",
+          "duration": 0.21779999999998267,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["availabilityRowText"],
+          "fullName": "availabilityRowText shows nothing while unknown or when the event is not open",
+          "status": "passed",
+          "title": "shows nothing while unknown or when the event is not open",
+          "duration": 0.4619000000000142,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["firstTimersText"],
+          "fullName": "firstTimersText reads like the reference",
+          "status": "passed",
+          "title": "reads like the reference",
+          "duration": 0.11320000000000618,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1793259052532,
+      "endTime": 1793259052539.1133,
+      "status": "passed",
+      "message": "",
+      "name": "C:/work/PG_Website/web/src/features/registration/free-registration.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["createOrderInput"],
+          "fullName": "createOrderInput sends the registration id only (no price, no amount, no currency)",
+          "status": "passed",
+          "title": "sends the registration id only (no price, no amount, no currency)",
+          "duration": 2.203499999999991,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["createOrderInput"],
+          "fullName": "createOrderInput never includes price, amount or currency",
+          "status": "passed",
+          "title": "never includes price, amount or currency",
+          "duration": 0.4872999999999763,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describePaidFailure"],
+          "fullName": "describePaidFailure maps HOLD_EXPIRED to hold_expired so the player starts again",
+          "status": "passed",
+          "title": "maps HOLD_EXPIRED to hold_expired so the player starts again",
+          "duration": 0.49269999999998504,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describePaidFailure"],
+          "fullName": "describePaidFailure maps INVALID_SIGNATURE to mismatch (no double-charge worry)",
+          "status": "passed",
+          "title": "maps INVALID_SIGNATURE to mismatch (no double-charge worry)",
+          "duration": 0.17850000000001387,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describePaidFailure"],
+          "fullName": "describePaidFailure maps PAYMENT_MISMATCH to mismatch",
+          "status": "passed",
+          "title": "maps PAYMENT_MISMATCH to mismatch",
+          "duration": 0.11430000000001428,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describePaidFailure"],
+          "fullName": "describePaidFailure maps PAYMENT_UNAVAILABLE to unavailable (retry later)",
+          "status": "passed",
+          "title": "maps PAYMENT_UNAVAILABLE to unavailable (retry later)",
+          "duration": 0.10420000000002005,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describePaidFailure"],
+          "fullName": "describePaidFailure maps ALREADY_REGISTERED to retry with a calm message",
+          "status": "passed",
+          "title": "maps ALREADY_REGISTERED to retry with a calm message",
+          "duration": 0.16020000000000323,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describePaidFailure"],
+          "fullName": "describePaidFailure falls back to retry for network and server failures",
+          "status": "passed",
+          "title": "falls back to retry for network and server failures",
+          "duration": 0.11990000000000123,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describePaidFailure"],
+          "fullName": "describePaidFailure never shows raw server error detail (security)",
+          "status": "passed",
+          "title": "never shows raw server error detail (security)",
+          "duration": 0.1342000000000212,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1793259052555,
+      "endTime": 1793259052559.1785,
+      "status": "passed",
+      "message": "",
+      "name": "C:/work/PG_Website/web/src/features/registration/paid-registration.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["resolveScreen: event and session"],
+          "fullName": "resolveScreen: event and session shows the cancelled screen before anything else, with the reason",
+          "status": "passed",
+          "title": "shows the cancelled screen before anything else, with the reason",
+          "duration": 4.225599999999986,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: event and session"],
+          "fullName": "resolveScreen: event and session treats a cancelled notice as cancelled even if the status lags",
+          "status": "passed",
+          "title": "treats a cancelled notice as cancelled even if the status lags",
+          "duration": 0.13980000000000814,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: event and session"],
+          "fullName": "resolveScreen: event and session asks a signed-out visitor to sign in, without needing R01",
+          "status": "passed",
+          "title": "asks a signed-out visitor to sign in, without needing R01",
+          "duration": 0.13360000000000127,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: event and session"],
+          "fullName": "resolveScreen: event and session says a signed-out visitor cannot register for an event that already started or ended",
+          "status": "passed",
+          "title": "says a signed-out visitor cannot register for an event that already started or ended",
+          "duration": 0.11189999999999145,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: R01 states"],
+          "fullName": "resolveScreen: R01 states maps closed, with ended only for a finished event",
+          "status": "passed",
+          "title": "maps closed, with ended only for a finished event",
+          "duration": 0.2109000000000094,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: R01 states"],
+          "fullName": "resolveScreen: R01 states maps not_yet_open with the opening time",
+          "status": "passed",
+          "title": "maps not_yet_open with the opening time",
+          "duration": 0.5520999999999958,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: R01 states"],
+          "fullName": "resolveScreen: R01 states splits ineligible into profile_incomplete and not_eligible",
+          "status": "passed",
+          "title": "splits ineligible into profile_incomplete and not_eligible",
+          "duration": 0.5471000000000004,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: R01 states"],
+          "fullName": "resolveScreen: R01 states maps full states to the waitlist screen or sold out",
+          "status": "passed",
+          "title": "maps full states to the waitlist screen or sold out",
+          "duration": 0.7018999999999949,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: R01 states"],
+          "fullName": "resolveScreen: R01 states maps the open states to their slots",
+          "status": "passed",
+          "title": "maps the open states to their slots",
+          "duration": 0.6388000000000034,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: already registered"],
+          "fullName": "resolveScreen: already registered confirmed is the registered screen",
+          "status": "passed",
+          "title": "confirmed is the registered screen",
+          "duration": 0.3083000000000027,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: already registered"],
+          "fullName": "resolveScreen: already registered pending is an active hold",
+          "status": "passed",
+          "title": "pending is an active hold",
+          "duration": 0.4930000000000234,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: already registered"],
+          "fullName": "resolveScreen: already registered confirming is payment in flight",
+          "status": "passed",
+          "title": "confirming is payment in flight",
+          "duration": 0.6367999999999938,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: already registered"],
+          "fullName": "resolveScreen: already registered waitlist without an offer is on_waitlist; with an offer it is offer_pending",
+          "status": "passed",
+          "title": "waitlist without an offer is on_waitlist; with an offer it is offer_pending",
+          "duration": 1.0284000000000049,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["resolveScreen: already registered"],
+          "fullName": "resolveScreen: already registered never reports a cancelled registration as a place",
+          "status": "passed",
+          "title": "never reports a cancelled registration as a place",
+          "duration": 0.4071999999999889,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["slots and steps"],
+          "fullName": "slots and steps only slot screens have a slot and a step path",
+          "status": "passed",
+          "title": "only slot screens have a slot and a step path",
+          "duration": 0.26659999999998263,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["slots and steps"],
+          "fullName": "slots and steps every step path contains its current step",
+          "status": "passed",
+          "title": "every step path contains its current step",
+          "duration": 0.18410000000000082,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1793259052510,
+      "endTime": 1793259052521.2666,
+      "status": "passed",
+      "message": "",
+      "name": "C:/work/PG_Website/web/src/features/registration/resolve-screen.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["joinWaitlistInput"],
+          "fullName": "joinWaitlistInput sends the slug only",
+          "status": "passed",
+          "title": "sends the slug only",
+          "duration": 2.4791999999999916,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeWaitlistFailure"],
+          "fullName": "describeWaitlistFailure reads HOLD_EXPIRED on accept as an expired offer",
+          "status": "passed",
+          "title": "reads HOLD_EXPIRED on accept as an expired offer",
+          "duration": 0.3486000000000047,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeWaitlistFailure"],
+          "fullName": "describeWaitlistFailure does not call HOLD_EXPIRED an offer on other actions",
+          "status": "passed",
+          "title": "does not call HOLD_EXPIRED an offer on other actions",
+          "duration": 0.26089999999999236,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeWaitlistFailure"],
+          "fullName": "describeWaitlistFailure treats ALREADY_REGISTERED as settled",
+          "status": "passed",
+          "title": "treats ALREADY_REGISTERED as settled",
+          "duration": 0.12520000000000664,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeWaitlistFailure"],
+          "fullName": "describeWaitlistFailure treats \"places are available\" on join as moved",
+          "status": "passed",
+          "title": "treats \"places are available\" on join as moved",
+          "duration": 0.10629999999997608,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeWaitlistFailure"],
+          "fullName": "describeWaitlistFailure treats EVENT_FULL as moved",
+          "status": "passed",
+          "title": "treats EVENT_FULL as moved",
+          "duration": 0.1372000000000071,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeWaitlistFailure"],
+          "fullName": "describeWaitlistFailure treats REGISTRATION_CLOSED as moved",
+          "status": "passed",
+          "title": "treats REGISTRATION_CLOSED as moved",
+          "duration": 0.09420000000000073,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeWaitlistFailure"],
+          "fullName": "describeWaitlistFailure treats REGISTRATION_NOT_OPEN as moved",
+          "status": "passed",
+          "title": "treats REGISTRATION_NOT_OPEN as moved",
+          "duration": 0.080600000000004,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["describeWaitlistFailure"],
+          "fullName": "describeWaitlistFailure keeps the page for a transient failure so the player can retry",
+          "status": "passed",
+          "title": "keeps the page for a transient failure so the player can retry",
+          "duration": 0.11899999999999977,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["remainingMs (no client-clock trust)"],
+          "fullName": "remainingMs (no client-clock trust) is the server gap minus time the browser has held the response",
+          "status": "passed",
+          "title": "is the server gap minus time the browser has held the response",
+          "duration": 0.1782000000000039,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["remainingMs (no client-clock trust)"],
+          "fullName": "remainingMs (no client-clock trust) never goes negative and treats unreadable input as expired",
+          "status": "passed",
+          "title": "never goes negative and treats unreadable input as expired",
+          "duration": 0.08770000000001232,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["remainingMs (no client-clock trust)"],
+          "fullName": "remainingMs (no client-clock trust) ignores a negative elapsed value (a monotonic clock cannot run backwards)",
+          "status": "passed",
+          "title": "ignores a negative elapsed value (a monotonic clock cannot run backwards)",
+          "duration": 0.04570000000001073,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["countdown text"],
+          "fullName": "countdown text formats minutes and seconds, rounding up so 0:00 means really over",
+          "status": "passed",
+          "title": "formats minutes and seconds, rounding up so 0:00 means really over",
+          "duration": 0.11610000000001719,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["countdown text"],
+          "fullName": "countdown text words it for screen readers",
+          "status": "passed",
+          "title": "words it for screen readers",
+          "duration": 0.091700000000003,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["offerIsFree"],
+          "fullName": "offerIsFree is free only at 0 paise",
+          "status": "passed",
+          "title": "is free only at 0 paise",
+          "duration": 0.058400000000006,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1793259052543,
+      "endTime": 1793259052547.1782,
+      "status": "passed",
+      "message": "",
+      "name": "C:/work/PG_Website/web/src/features/registration/waitlist.test.ts"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+---
+description: Planning discipline rules
+globs: ["docs/plans/**"]
+---
+
+# Planning Rules
+
+- Use `schemas/plan.schema.yaml` and `schemas/task.schema.yaml`.
+- Tasks must have: id, type (task), feature_id, plan_id, title, owner (agent name, not role), status. Estimate (S/M/L) recorded in description if not a formal field.
+- Task paths: `docs/plans/PLAN-NNN-<slug>.md` for the plan, or per-feature plans per architecture requirements.
+- Order tasks by dependency before assigning.
+- Owner field maps to agent roster in `.claude/rules/00-team.mdc`.

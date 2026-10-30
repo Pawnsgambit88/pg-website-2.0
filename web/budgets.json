@@ -1,0 +1,94 @@
+{
+  "$comment": "First Load JS budgets in gzip bytes per route class (ARCH-001 14.3, DEC-017). 1 KB = 1000 bytes. 'baseline' is measured by scripts/measure-baseline.mjs from the default Turbopack build. check:bundle (later task) fails a route over its budget or growing more than 5000 bytes over 'baseline' without a budgets.json update in the same PR. DEC-029: other.motionChunkGzip is the lazy chunk holding gsap core plus the HomeMotion island (estimate; tighten to measured size plus 10 percent), other.motionLoaderGzip is the island loader allowed in First Load JS; check:bundle must also fail if a gsap module appears in any route initial chunk list or the motion chunk loads on a route outside motionAllowedRoutes. firstLoadJsGzip budgets are unchanged by DEC-029.",
+  "unit": "gzip-bytes",
+  "growthToleranceBytes": 5000,
+  "routeClasses": {
+    "publicContent": {
+      "firstLoadJsGzip": 170000,
+      "routes": ["/", "/play", "/past-events", "/community", "/stories", "/privacy", "/terms", "/refund-policy"]
+    },
+    "eventDetail": {
+      "firstLoadJsGzip": 180000,
+      "routes": ["/events/[slug]", "/stories/[slug]"]
+    },
+    "contact": {
+      "firstLoadJsGzip": 185000,
+      "routes": ["/contact"]
+    },
+    "auth": {
+      "firstLoadJsGzip": 200000,
+      "routes": ["/login", "/auth/callback", "/reset-password", "/welcome"]
+    },
+    "registrationFrame": {
+      "firstLoadJsGzip": 210000,
+      "routes": ["/events/[slug]/register"]
+    },
+    "player": {
+      "firstLoadJsGzip": 220000,
+      "routes": ["/app", "/app/events", "/app/profile"]
+    },
+    "eventRoom": {
+      "firstLoadJsGzip": 230000,
+      "routes": ["/app/events/[id]"]
+    },
+    "rating": {
+      "firstLoadJsGzip": 225000,
+      "routes": ["/app/rating"]
+    },
+    "admin": {
+      "firstLoadJsGzip": 250000,
+      "routes": ["/admin", "/admin/**"]
+    },
+    "eventBuilder": {
+      "firstLoadJsGzip": 260000,
+      "routes": ["/admin/events/new", "/admin/events/[id]/edit"]
+    }
+  },
+  "other": {
+    "globalCssGzip": 35000,
+    "fontsOnHomeBytes": 150000,
+    "lazyChunkGzip": 60000,
+    "lazyChunkGzipMediaEditor": 80000,
+    "paidPanelChunkGzip": 30000,
+    "motionChunkGzip": 32000,
+    "motionLoaderGzip": 2500
+  },
+  "motionAllowedRoutes": ["/"],
+  "baseline": {
+    "next": "16.4.2",
+    "bundler": "turbopack",
+    "routes": {
+      "/": {
+        "rawBytes": 455990,
+        "gzipBytes": 134780,
+        "reportedUncompressedBytes": 455990
+      },
+      "/_not-found": {
+        "rawBytes": 455990,
+        "gzipBytes": 134780,
+        "reportedUncompressedBytes": 455990
+      },
+      "/admin": {
+        "rawBytes": 455990,
+        "gzipBytes": 134780,
+        "reportedUncompressedBytes": 455990
+      },
+      "/app": {
+        "rawBytes": 455990,
+        "gzipBytes": 134780,
+        "reportedUncompressedBytes": 455990
+      },
+      "/handoff": {
+        "rawBytes": 455990,
+        "gzipBytes": 134780,
+        "reportedUncompressedBytes": 455990
+      },
+      "/login": {
+        "rawBytes": 455990,
+        "gzipBytes": 134780,
+        "reportedUncompressedBytes": 455990
+      }
+    },
+    "measuredAt": "2026-10-22"
+  }
+}

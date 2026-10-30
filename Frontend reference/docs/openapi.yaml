@@ -1,0 +1,121 @@
+openapi: 3.1.0
+info:
+  title: Pawn's Gambit Privileged Command API
+  version: 2.0.0
+  description: Edge-function command surface. Public reads use RLS-protected Supabase data APIs.
+servers:
+  - url: https://{project}.supabase.co/functions/v1
+    variables:
+      project: { default: PROJECT_REF }
+security:
+  - bearerAuth: []
+paths:
+  /create-payment-order:
+    post:
+      summary: Reserve event capacity and create provider order when payment is required
+      parameters:
+        - in: header
+          name: x-idempotency-key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId]
+              properties: { eventId: { type: string, format: uuid } }
+      responses:
+        '200': { description: Registration reservation and optional payment order }
+  /verify-payment:
+    post:
+      summary: Verify Razorpay callback against server-owned order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [razorpay_order_id, razorpay_payment_id, razorpay_signature]
+              properties:
+                razorpay_order_id: { type: string }
+                razorpay_payment_id: { type: string }
+                razorpay_signature: { type: string }
+      responses:
+        '200': { description: Registration confirmed }
+  /check-in:
+    post:
+      summary: Player self check-in during configured event window
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId]
+              properties: { eventId: { type: string, format: uuid } }
+      responses: { '200': { description: Checked in } }
+  /generate-pairings:
+    post:
+      summary: Generate a draft round using the event pairing method
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId, roundNo]
+              properties:
+                eventId: { type: string, format: uuid }
+                roundNo: { type: integer, minimum: 1 }
+      responses: { '200': { description: Draft pairings generated } }
+  /finalize-round:
+    post:
+      summary: Finalize results and apply rating updates exactly once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roundId]
+              properties: { roundId: { type: string, format: uuid } }
+      responses: { '200': { description: Round finalized } }
+  /admin-set-role:
+    post:
+      summary: Admin-only role assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, role]
+              properties:
+                userId: { type: string, format: uuid }
+                role: { type: string, enum: [player, admin] }
+      responses: { '200': { description: Role changed and audited } }
+  /send-event-message:
+    post:
+      summary: Queue an event communication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId, audience, channel, body]
+              properties:
+                eventId: { type: string, format: uuid }
+                audience: { type: object }
+                channel: { type: string, enum: [email, whatsapp, sms, in_app] }
+                subject: { type: string }
+                body: { type: string }
+      responses: { '202': { description: Queued } }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,0 +1,27 @@
+route,screen,auth,primary_source,server_mutation
+/,Home,public,CMS home + public events,None
+/play,Play,public,Public events,None
+/events/:slug,Event detail,public,Public event projection,None
+/past-events,Past events,public,Completed events,None
+/community,Community,public,CMS community,None
+/stories,Stories,public,CMS stories,None
+/contact,Contact,public,Contact config/provider,Send contact message if enabled
+/login,Login,public,Supabase Auth,Auth
+/welcome,Onboarding,player,profiles/preferences,Update profile preferences
+/events/:slug/register,Registration,player,event + registration state,reserve_event_place/create-payment-order/verify-payment
+/app,Player dashboard,player,registrations/pairing/ratings,None
+/app/events,My Events,player,registrations + events,Cancel where policy allows
+/app/events/:id,Event Room,player,check-in/round/pairing/standings,check-in/submit-result
+/app/rating,Rating,player,rating_profiles + ledger,None
+/app/profile,Profile,player,profile + public profile,Update owned safe fields
+/admin,Admin overview,admin,operational aggregates,None
+/admin/content,CMS,admin,cms pages/sections,Save/publish content
+/admin/media,Media,admin,media assets/collections,Upload/manage collection
+/admin/stories,Stories admin,admin,cms_stories,Create/update/publish
+/admin/testimonials,Testimonials,admin,testimonials,Create/update/publish
+/admin/events,Events admin,admin,events,Status-safe admin actions
+/admin/events/new,Event Builder,admin,event config,Create/update/publish event
+/admin/events/:id,Event Control Room,admin,event operations,check-in/generate/publish/finalize/message/refund as permitted
+/admin/players,Players admin,admin,profiles/registrations/ratings,Permitted admin player actions
+/admin/payments,Payments admin,admin,payment ledger,Refund/reconcile through server functions
+/admin/settings,Settings,admin,non-secret configuration,Update safe settings

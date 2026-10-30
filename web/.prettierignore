@@ -1,0 +1,15 @@
+# Generated / vendored
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+next-env.d.ts
+package-lock.json
+*.tsbuildinfo
+public/
+
+# Hand-aligned token tables and docs: Prettier would reflow them. CSS is owned by the token task (ARCH-001 13.1).
+*.css
+*.md

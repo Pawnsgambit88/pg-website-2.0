@@ -1,0 +1,74 @@
+"""Admin media (contract 3.7: S07-S12). Default deny: every view is an AdminView."""
+from __future__ import annotations
+
+from core.responses import ok
+
+from . import media_service as svc
+from .views import AdminView
+from .views_events import AdminPagePagination
+
+
+class UploadsView(AdminView):  # S07
+    def post(self, request):
+        return ok(svc.issue_upload(request, svc.object_body(request)), status=201)
+
+
+class CompleteView(AdminView):  # S08
+    def post(self, request, asset_id):
+        asset, created = svc.complete_upload(request, asset_id)
+        data = svc.asset_dtos([asset])[0]
+        data['warnings'] = [] if (asset.decorative or asset.alt) else [
+            {'code': 'ALT_MISSING', 'field': 'alt', 'message': 'Add alt text or mark the image decorative.'}]
+        return ok(data, status=201 if created else 200)
+
+
+class AssetsView(AdminView):  # S09
+    def get(self, request):
+        qs = svc.list_assets(request.query_params)
+        paginator = AdminPagePagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        return paginator.get_paginated_response(svc.asset_dtos(page))
+
+
+class AssetDetailView(AdminView):  # S10, S11 (and a read of one asset)
+    def get(self, request, asset_id):
+        asset = svc.get_asset(asset_id)
+        return ok(svc.asset_dtos([asset])[0])
+
+    def patch(self, request, asset_id):
+        version, changes = svc.parse_asset_patch(svc.object_body(request))
+        asset, warnings = svc.update_asset(request, asset_id, version, changes)
+        data = svc.asset_dtos([asset])[0]
+        data['warnings'] = warnings
+        return ok(data)
+
+    def delete(self, request, asset_id):
+        svc.delete_asset(request, asset_id)
+        return ok()
+
+
+class CollectionsView(AdminView):  # S12
+    def get(self, request):
+        qs = svc.list_collections(request.query_params).prefetch_related('items__asset')
+        paginator = AdminPagePagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        counts = svc.collection_usage_counts([c.pk for c in page])
+        changes = svc.collection_last_changes([c.pk for c in page])
+        rows = []
+        for c in page:
+            # Items are included: the web row is the full admin collection (prefetched, so no per-row query).
+            rows.append(svc.collection_dto(c, usage_count=counts[c.pk], last_change=changes.get(c.pk)))
+        return paginator.get_paginated_response(rows)
+
+    def post(self, request):
+        parsed = svc.parse_collection_create(svc.object_body(request))
+        return ok(svc.collection_dto(svc.create_collection(request, parsed)), status=201)
+
+
+class CollectionDetailView(AdminView):  # S12
+    def get(self, request, collection_id):
+        return ok(svc.collection_dto(svc.detail(collection_id)))
+
+    def patch(self, request, collection_id):
+        version, parsed = svc.parse_collection_patch(svc.object_body(request))
+        return ok(svc.collection_dto(svc.update_collection(request, collection_id, version, parsed)))

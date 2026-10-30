@@ -1,0 +1,59 @@
+number,file,area,title,description
+1,01-home.html,Public discovery,Home,None
+2,02-play.html,Public discovery,Play,None
+3,03-event-open.html,Public discovery,Event — Open,None
+4,04-event-completed.html,Public discovery,Event — Completed,None
+5,05-past-events.html,Public discovery,Past Events,None
+6,06-community.html,Public discovery,Community,None
+7,07-stories.html,Public discovery,Stories,None
+8,08-contact.html,Public discovery,Contact,None
+9,09-privacy.html,Public discovery,Privacy Policy,None
+10,10-terms.html,Public discovery,Terms of Use,None
+11,11-refund-policy.html,Public discovery,Refund & Cancellation Policy,None
+12,12-404.html,Public discovery,404,None
+13,13-login.html,Authentication & conversion,Login,None
+14,14-create-account.html,Authentication & conversion,Create Account,None
+15,15-oauth-callback.html,Authentication & conversion,OAuth Callback,None
+16,16-reset-password.html,Authentication & conversion,Reset Password,None
+17,17-welcome.html,Authentication & conversion,First Login,None
+18,18-register-paid.html,Authentication & conversion,Registration — Paid,None
+19,19-register-free.html,Authentication & conversion,Registration — Free,None
+20,20-register-waitlist.html,Authentication & conversion,Registration — Waitlist,None
+21,21-register-success.html,Authentication & conversion,Registration — Success,None
+22,22-player-dashboard.html,Player · My PG,Player — Dashboard,None
+23,23-my-events.html,Player · My PG,Player — My Events,None
+24,24-event-room-before-checkin.html,Player · My PG,Player — Event Room,None
+25,25-event-room-checkin-open.html,Player · My PG,Player — Event Room,None
+26,26-event-room-pairing-pending.html,Player · My PG,Player — Event Room,None
+27,27-event-room-live.html,Player · My PG,Player — Event Room,None
+28,28-event-room-between-rounds.html,Player · My PG,Player — Event Room,None
+29,29-event-room-complete.html,Player · My PG,Player — Event Room,None
+30,30-rating.html,Player · My PG,Player — Ratings,None
+31,31-profile.html,Player · My PG,Player — Profile,None
+32,32-admin-dashboard.html,Admin · Control Room,Admin — Dashboard,None
+33,33-admin-content.html,Admin · Control Room,Admin — Website CMS,None
+34,34-admin-media.html,Admin · Control Room,Admin — Media,None
+35,35-admin-stories.html,Admin · Control Room,Admin — Stories,None
+36,36-admin-testimonials.html,Admin · Control Room,Admin — Testimonials,None
+37,37-admin-events.html,Admin · Control Room,Admin — Events,None
+38,38-event-builder-basics.html,Admin · Control Room,Admin — Event Builder,None
+39,39-event-builder-experience.html,Admin · Control Room,Admin — Event Builder,None
+40,40-event-builder-registration.html,Admin · Control Room,Admin — Event Builder,None
+41,41-event-builder-payment.html,Admin · Control Room,Admin — Event Builder,None
+42,42-event-builder-game-system.html,Admin · Control Room,Admin — Event Builder,None
+43,43-event-builder-media.html,Admin · Control Room,Admin — Event Builder,None
+44,44-event-builder-communications.html,Admin · Control Room,Admin — Event Builder,None
+45,45-event-builder-review.html,Admin · Control Room,Admin — Event Builder,None
+46,46-event-control-overview.html,Admin · Control Room,Admin — Event Control,None
+47,47-event-control-registrations.html,Admin · Control Room,Admin — Event Control,None
+48,48-event-control-checkin.html,Admin · Control Room,Admin — Event Control,None
+49,49-event-control-pairings.html,Admin · Control Room,Admin — Event Control,None
+50,50-event-control-payments.html,Admin · Control Room,Admin — Event Control,None
+51,51-event-control-messages.html,Admin · Control Room,Admin — Event Control,None
+52,52-event-control-gallery.html,Admin · Control Room,Admin — Event Control,None
+53,53-event-control-audit.html,Admin · Control Room,Admin — Event Control,None
+54,54-admin-players.html,Admin · Control Room,Admin — Players,None
+55,55-admin-payments.html,Admin · Control Room,Admin — Payments,None
+56,56-admin-settings.html,Admin · Control Room,Admin — Settings,None
+57,57-design-system.html,Design reference,Design System,None
+58,58-ui-states.html,Design reference,UI States,None

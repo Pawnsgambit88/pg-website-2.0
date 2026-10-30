@@ -1,0 +1,61 @@
+---
+description: Web frontend engineering rules
+globs: ["web/**"]
+---
+
+# Web Frontend Rules
+
+## Stack and Governing Standard
+
+- `web/` is Next.js 16 App Router, React 19, TypeScript strict (`noUncheckedIndexedAccess`), Tailwind v4 (CSS-first `@theme`), TanStack Query (client groups only), react-hook-form + zod, Radix per-package, npm, Node 24.
+- The governing React standard is `.claude/skills/react-best-practices` (Next.js edition). Priority order: waterfalls (`async-*`), bundle (`bundle-*`), server (`server-*`), client fetching (`client-*`), re-render (`rerender-*`), rendering/hydration (`rendering-*`), JS (`js-*`). **Every `server-*` and Next rule applies.**
+- Read the docs in `web/node_modules/next/dist/docs/` before using Next APIs; Next 16 differs from earlier versions.
+
+## Definition of Done
+
+- **DoD-G**: TypeScript strict, `npm run check` passes, no `any` without a comment, no hard-coded API URL, no secrets in client code, no raw colours or off-scale spacing.
+- **DoD-S (screens)**: loading, error, empty and data states; no horizontal scroll at 390 and 320; targets 44 px (controls 48 px); inputs 16 px; safe-area on fixed bars; keyboard operable with visible focus; labelled, associated errors; no serious axe violations; reduced motion respected; faithful to reference at 1440 and 390; component tests plus Playwright smoke.
+- **DoD-P (public routes)**: static or ISR in build output, content and links in raw HTML, metadata and canonical, JSON-LD where applicable, no request APIs, tags declared, volatile data in client islands with reserved space.
+- **DoD-R**: see A.6 in ARCH-001.
+
+## Layout and Imports (Module Rules M1-M12)
+
+- Alias `@/*` to `src/*` only. No barrel files (`index.ts` re-exports); import the defining module. One icon per file imported by path.
+- One component per file, named exports (default only for Next special files).
+- `app/` holds routes only. Reusable UI in `components/{ui,domain,layout}`; client-heavy slices in `features/<name>` (never imports another feature); logic in `lib/*`.
+- `(public)` may not import `features/*`, `lib/query`, mock stores or Radix overlays (except mobile menu). A route group never imports another group.
+- Modules under `lib/data/public`, `lib/api/server`, `lib/env/env.server.ts`, `lib/revalidate` start with `import 'server-only'`. Client modules start with `'use client'`. A client module never imports server-only.
+- Dynamic imports use literal paths. Storage only through `lib/storage/versioned.ts`.
+
+## Server and Client Components
+
+- Server Components by default. Add `'use client'` only for state, effects, refs, handlers or browser APIs, and keep client components as small leaf islands.
+- Props crossing the boundary are primitives or minimal DTOs plus `children`; never pass a whole entity. Client-group pages are thin Server Components passing only an `id` or `slug`.
+- No `cookies()`, `headers()`, `connection()`, `searchParams` or `unstable_noStore` in `(public)` (except `lib/data/public/preview.ts`). Client-group layouts are `force-dynamic`.
+- **No mutable module-level state written during server render, including in mocks.** The only exception is the revalidation event-id map in the route handler.
+- **No Server Actions.** If justified: ADR first, authenticate and authorise inside the action.
+- Call `notFound()` before any `await` of a Suspense-wrapped child so unknown slugs return a real 404.
+
+## Data and API
+
+- Components never call `fetch` and never import the mock or adapters. Use `getPublicApi()` (server) or `useApi()` (browser). All data types come from `PgApi` zod DTOs.
+- Public data: only through `lib/data/public/*` fetchers with `React.cache`, tags from `tags.ts`, `revalidate = 900`. Independent fetches start together. Failures throw; never convert errors into empty data.
+- Client data: TanStack Query with the key factory (`qk`), shared `queryOptions`, `useApiMutation` with explicit `invalidates`. No optimistic UI for results, payments, registration, publish or finalise. Polling only through `usePolling` (visibility-aware).
+- Errors: `ApiError` plus `copyFor(error, { action })`; unknown codes fall back; never show raw messages or stack traces. Send `Idempotency-Key` on every creating call, created at intent start.
+- Money is integer paise; format with `lib/format`. Times are ISO with offset; format in IST with explicit timezone; deterministic on server and client.
+
+## UI Conventions
+
+- Tokens only (no hex, no arbitrary spacing/colours). Copper is an accent fill; text uses `copper-dark`. Public radius 2 px.
+- Mobile-first; test 320 and 390 first. No `100vh`. Sticky bars reserve space and honour `env(safe-area-inset-*)`. Tables use `ResponsiveTable`.
+- Images only through `ResponsiveImage` (`alt` required, `sizes`, focal point, one `priority` per page). Icons are in-house modules. No third-party fonts, images or icon packages.
+- Dialogs, drawers and sheets use shared overlay primitives (focus trap, Escape, return focus). Live regions: one polite region; announce changes once. Disabled important actions show visible reason text.
+- Reveal/motion in CSS plus shared observer; honour `prefers-reduced-motion`.
+
+## Security
+
+- No `dangerouslySetInnerHTML` except in `JsonLd`; text is inert; links from data restricted to http(s), mailto, tel. No tokens, bodies, PII or payment identifiers in logs, URLs or errors. Only `NEXT_PUBLIC_*` reaches the browser; secrets are server-only. Return-to through `safe-redirect`. Guards are UX only. Mock code must never reach production. CSP changes only in `lib/security/csp.ts`.
+
+## Testing
+
+- Unit and component tests with Vitest/Testing Library; axe helper on components; re-render count tests for hot paths. Playwright specs by screen at 1440/1280/1024/768/390/320 with no-horizontal-scroll, touch-target and axe helpers; raw-HTML (no JS) tests for public routes; request-log assertions for network rules. Contract suite runs against mock and `CONTRACT_BASE_URL`. Run `npm run check` before every handoff.

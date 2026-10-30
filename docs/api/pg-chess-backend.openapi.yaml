@@ -1,0 +1,4255 @@
+openapi: 3.0.3
+info:
+  title: PG Chess Backend API
+  version: 0.3.0
+  description: |
+    Implemented endpoints of the Django REST backend (`backend/`), generated from the code on 2026-10-27.
+    Import into Apidog via **Project Settings > Import Data > OpenAPI/Swagger**.
+
+    **Scope.** Covers what exists now: health, auth, profile, public content, registrations (free, waitlist, offer, cancel),
+    payments (R04, R05) and the Razorpay webhook (W01), player area, event room and ratings. NOT included because they are
+    not built yet: admin routes other than ping, dashboard, events, rounds, control room, media, CMS and preview (BE-10 onward).
+    The failure envelope's `error` gains an optional `blockers[]` (NOT_PUBLISHABLE only).
+
+    **Envelope.** Every `/api/*` response is `{success, message, data, error, meta}` (envelope keys snake_case, keys inside
+    `data` camelCase). Errors carry a stable `error.code`. Lists carry `meta.pagination`.
+
+    **Auth.** `Authorization: Bearer <accessToken>`. Token mode is chosen by the server (`AUTH_TOKEN_MODE`):
+    `body` returns `refreshToken` in `data`; `cookie` sets an httpOnly refresh cookie and requires a non-empty
+    `X-CSRF-Token` header on refresh and logout.
+
+    **Idempotency.** Endpoints marked "Idempotency-Key required" return `400 VALIDATION_FAILED` without the header.
+    Replays return the original response with `Idempotent-Replay: true`.
+
+    **Use in Apidog.** After import, create an environment with `baseUrl = http://localhost:8000` and a `token` variable.
+    Run `Auth / Login`, copy `data.accessToken` into `token`.
+  contact:
+    name: PG Chess
+servers:
+  - url: http://localhost:8000/api
+    description: Local development
+  - url: '{baseUrl}/api'
+    description: Custom environment
+    variables:
+      baseUrl:
+        default: http://localhost:8000
+tags:
+  - name: System
+  - name: Auth
+  - name: Profile
+  - name: Public content
+  - name: Registration
+  - name: Player area
+  - name: Event room
+  - name: Ratings
+  - name: Admin
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Liveness and database ping
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          status: {type: string, example: ok}
+                          database: {type: boolean, example: true}
+                          serverNow: {type: string, format: date-time}
+        '500': {$ref: '#/components/responses/Error'}
+
+  # ----------------------------------------------------------------- Auth
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: A01 Create an account
+      description: "When the admin setting `auth.signupOpen` is false the call is refused with 403 `SIGNUP_CLOSED` (a Tier C code ratified in BE-14; the web adds copy, until then it falls back to the HTTP-status copy)."
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              additionalProperties: false
+              properties:
+                name: {type: string, maxLength: 80, example: Asha Rao}
+                email: {type: string, format: email, example: asha@example.com}
+                password: {type: string, format: password, example: 'correct-horse-battery'}
+                city: {type: string, maxLength: 80}
+                phone: {type: string, minLength: 7, maxLength: 20}
+      responses:
+        '201':
+          description: Account created and signed in
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {description: 'SIGNUP_CLOSED', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '409': {description: 'EMAIL_TAKEN', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '429': {$ref: '#/components/responses/Error'}
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: A02 Sign in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              additionalProperties: false
+              properties:
+                email: {type: string, format: email}
+                password: {type: string, format: password}
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {description: 'INVALID_CREDENTIALS or AUTH_REQUIRED (reason ACCOUNT_SUSPENDED)', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '429': {$ref: '#/components/responses/Error'}
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: A03 Rotate the refresh token
+      description: |
+        Body mode: send `refreshToken` in the JSON body. Cookie mode: the cookie is read and `X-CSRF-Token` must be a
+        non-empty header. A reused token revokes the whole session family (`AUTH_REQUIRED`, reason `REFRESH_REUSED`).
+      security: []
+      parameters:
+        - {name: X-CSRF-Token, in: header, required: false, schema: {type: string}, description: Required in cookie mode}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: {type: string}
+      responses:
+        '200':
+          description: New token pair
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TokenResponse'}
+        '401': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: A04 Sign out (revokes the session family)
+      description: Always succeeds. Cookie mode requires `X-CSRF-Token`.
+      security: []
+      parameters:
+        - {name: X-CSRF-Token, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/EmptyOk'}
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: A05 Current user
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/Me'}
+        '401': {$ref: '#/components/responses/Error'}
+  /auth/password-reset:
+    post:
+      tags: [Auth]
+      summary: A06 Request a password reset (neutral response)
+      description: Identical 200 for known and unknown emails.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              additionalProperties: false
+              properties:
+                email: {type: string, format: email}
+      responses:
+        '200': {$ref: '#/components/responses/EmptyOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+  /auth/password-reset/confirm:
+    post:
+      tags: [Auth]
+      summary: A07 Set a new password with a reset token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              additionalProperties: false
+              properties:
+                token: {type: string, maxLength: 512}
+                newPassword: {type: string, format: password}
+      responses:
+        '200': {$ref: '#/components/responses/EmptyOk'}
+        '400': {description: 'RESET_TOKEN_INVALID, WEAK_PASSWORD or VALIDATION_FAILED', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '429': {$ref: '#/components/responses/Error'}
+  /auth/step-up:
+    post:
+      tags: [Auth]
+      summary: Re-enter password to obtain a single-use step-up grant (5 minutes)
+      description: 'The grant is sent on the guarded call in the `X-Step-Up-Token` header; `Authorization: Bearer` stays the access token (decided BE-14; web adapter change is an FE task).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              additionalProperties: false
+              properties:
+                password: {type: string, format: password}
+      responses:
+        '200':
+          description: Grant token
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          accessToken: {type: string}
+        '401': {$ref: '#/components/responses/Error'}
+  /auth/oauth/google/start:
+    get:
+      tags: [Auth]
+      summary: A08 Google sign-in start (flag-gated stub, 404 NOT_FOUND today)
+      security: []
+      responses:
+        '404': {$ref: '#/components/responses/Error'}
+  /auth/oauth/exchange:
+    post:
+      tags: [Auth]
+      summary: A09 Google code exchange (flag-gated stub, 404 NOT_FOUND today)
+      security: []
+      responses:
+        '404': {$ref: '#/components/responses/Error'}
+  /auth/oauth/google/callback:
+    get:
+      tags: [Auth]
+      summary: A10 Google provider callback (flag-gated stub, 404 NOT_FOUND today)
+      security: []
+      responses:
+        '404': {$ref: '#/components/responses/Error'}
+
+  # ----------------------------------------------------------------- Profile
+  /me/profile:
+    get:
+      tags: [Profile]
+      summary: M13 Private profile
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/Profile'}
+        '401': {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Profile]
+      summary: M14 Update allow-listed private fields
+      description: Unknown keys (role, email, ratings, id) are rejected with `VALIDATION_FAILED`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: {type: string, maxLength: 80}
+                city: {type: string, maxLength: 80}
+                area: {type: string, maxLength: 80}
+                phone: {type: string, minLength: 7, maxLength: 20}
+                birthday: {type: string, format: date}
+                chessComHandle: {type: string, minLength: 3, maxLength: 25}
+                fideId: {type: string, minLength: 3, maxLength: 12}
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/Profile'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+  /me/public-identity:
+    patch:
+      tags: [Profile]
+      summary: M15 Visibility toggles for the public identity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                showDisplayName: {type: boolean}
+                showRatings: {type: boolean}
+                showChessComHandle: {type: boolean}
+                showCityChapter: {type: boolean}
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/Profile'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+  /me/preferences:
+    patch:
+      tags: [Profile]
+      summary: M16 First-login preferences (saving or skipping both finish onboarding)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                playStyle: {type: string, enum: [figuring_out, mostly_online, club_player, tournament_player]}
+                mood: {type: string, enum: [play, improve, compete, meet_people]}
+                skipped: {type: boolean}
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/Me'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+
+  # ----------------------------------------------------------------- Public content
+  /site/{section}:
+    get:
+      tags: [Public content]
+      summary: P01 Published site section
+      description: Cache `public, s-maxage=60, stale-while-revalidate=300`.
+      security: []
+      parameters:
+        - name: section
+          in: path
+          required: true
+          schema: {type: string, enum: [home, community, nav, footer, meta]}
+        - {$ref: '#/components/parameters/PreviewKey'}
+      responses:
+        '200':
+          description: Section with resolved media collections
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          key: {type: string}
+                          version: {type: integer, format: int64}
+                          updatedAt: {type: string, format: date-time}
+                          content: {type: object, additionalProperties: true}
+        '404': {$ref: '#/components/responses/Error'}
+  /events:
+    get:
+      tags: [Public content]
+      summary: P02 Upcoming published events
+      security: []
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {name: type, in: query, schema: {type: string, enum: [social, rated_tournament, league, workshop, special]}}
+        - {name: audience, in: query, schema: {type: string, enum: [all_levels, beginner, solo]}}
+        - {name: free, in: query, schema: {type: boolean}}
+        - {name: city, in: query, schema: {type: string, maxLength: 80}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of event cards
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: {$ref: '#/components/schemas/EventCard'}
+        '400': {$ref: '#/components/responses/Error'}
+  /events/{slug}:
+    get:
+      tags: [Public content]
+      summary: P03 Event detail by slug
+      security: []
+      parameters:
+        - {$ref: '#/components/parameters/Slug'}
+        - {$ref: '#/components/parameters/PreviewKey'}
+      responses:
+        '200':
+          description: Event detail (completed events include `archive` when published)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/EventDetail'}
+        '404': {description: EVENT_NOT_FOUND, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /events/{slug}/availability:
+    get:
+      tags: [Public content]
+      summary: P04 Live availability (no-store)
+      security: []
+      parameters:
+        - {$ref: '#/components/parameters/Slug'}
+      responses:
+        '200':
+          description: Availability
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          state: {type: string, example: open}
+                          placesLeft: {type: integer, nullable: true, description: 'For an unlimited event (null capacity) this is the sentinel 100000 and `unlimited` is true.'}
+                          unlimited: {type: boolean, description: 'Present and true only for an event with no capacity limit (additive).'}
+                          waitlistOpen: {type: boolean}
+                          serverNow: {type: string, format: date-time}
+        '404': {$ref: '#/components/responses/Error'}
+  /past-events:
+    get:
+      tags: [Public content]
+      summary: P05 Completed events
+      security: []
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {name: type, in: query, schema: {type: string, enum: [social, rated_tournament, league, workshop, special]}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of event cards (`archivePublished` flag set)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: {$ref: '#/components/schemas/EventCard'}
+  /stories:
+    get:
+      tags: [Public content]
+      summary: P06 Published stories
+      security: []
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of story cards
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: {$ref: '#/components/schemas/StoryCard'}
+  /stories/{slug}:
+    get:
+      tags: [Public content]
+      summary: P07 Story detail (closed block body, no HTML)
+      security: []
+      parameters:
+        - {$ref: '#/components/parameters/Slug'}
+        - {$ref: '#/components/parameters/PreviewKey'}
+      responses:
+        '200':
+          description: Story
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/StoryCard'
+                          - type: object
+                            properties:
+                              eyebrow: {type: string}
+                              body: {type: array, items: {type: object, additionalProperties: true}}
+                              updatedAt: {type: string, format: date-time}
+        '404': {$ref: '#/components/responses/Error'}
+  /testimonials:
+    get:
+      tags: [Public content]
+      summary: P08 Published testimonials
+      security: []
+      responses:
+        '200':
+          description: Testimonials
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: {type: string, format: uuid}
+                            quote: {type: string}
+                            name: {type: string}
+                            descriptor: {type: string}
+                            portrait: {$ref: '#/components/schemas/Media'}
+                            version: {type: integer, format: int64}
+  /legal/{page}:
+    get:
+      tags: [Public content]
+      summary: P09 Legal page
+      security: []
+      parameters:
+        - name: page
+          in: path
+          required: true
+          schema: {type: string, enum: [privacy, terms, refund-policy]}
+        - {$ref: '#/components/parameters/PreviewKey'}
+      responses:
+        '200':
+          description: Legal page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          page: {type: string}
+                          title: {type: string}
+                          blocks: {type: array, items: {type: object, additionalProperties: true}}
+                          effectiveDate: {type: string, format: date}
+                          version: {type: integer, format: int64}
+        '404': {$ref: '#/components/responses/Error'}
+  /sitemap-entries:
+    get:
+      tags: [Public content]
+      summary: P10 Sitemap entries (page_size up to 1000)
+      security: []
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
+      responses:
+        '200':
+          description: Page of entries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+                          properties:
+                            updatedAt: {type: string, format: date-time}
+  /settings/public:
+    get:
+      tags: [Public content]
+      summary: P12 Public settings
+      security: []
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          supportEmail: {type: string}
+                          deskContactHref: {type: string, nullable: true}
+                          social: {type: object, additionalProperties: true}
+                          defaultCity: {type: string}
+        '404': {$ref: '#/components/responses/Error'}
+  /contact:
+    post:
+      tags: [Public content]
+      summary: P11 Contact form (202, stored then emailed to the configured destination)
+      description: "Honeypot field `website` is silently accepted and dropped. 5 stored messages per hour per IP. The message is stored first; delivery to the destination (admin setting `notifications.contactDestinationEmail`, else env `CONTACT_DESTINATION_EMAIL`, else the public support email) is attempted once after the request and retried by the worker. The response never depends on delivery. `Idempotency-Key` is optional (ratified BE-14); a sent key is honoured."
+      security: []
+      parameters:
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, topic, message]
+              properties:
+                name: {type: string, maxLength: 80}
+                email: {type: string, format: email}
+                topic: {type: string, enum: [joining_event, partnership, payment, other]}
+                message: {type: string, maxLength: 2000}
+                website: {type: string, maxLength: 200, description: Honeypot, leave empty}
+      responses:
+        '202': {$ref: '#/components/responses/EmptyOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '422': {description: IDEMPOTENCY_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '429': {$ref: '#/components/responses/Error'}
+  /preview/exchange:
+    post:
+      tags: [Public content]
+      summary: Preview exchange (server to server; bearer PREVIEW_SECRET)
+      description: 'Consumes a single-use preview link token (5 min) and returns a read key for the one item it names. The bearer is compared in constant time; when `PREVIEW_SECRET` is unset every call is 401. 30 calls per minute per IP (429). The response is `no-store`. `path` is a relative, allow-listed path (`/`, `/community`, `/privacy`, `/terms`, `/refund-policy`, `/events/{slug}`, `/stories/{slug}`). Send the key as `X-Preview-Key` on the public GETs for that item; it expires after 5 minutes.'
+      security: []
+      parameters:
+        - {name: Authorization, in: header, required: true, description: 'Bearer PREVIEW_SECRET', schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string, description: Token from the preview link returned by POST /admin/preview-link}
+      responses:
+        '200':
+          description: Exchanged
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          path: {type: string, example: /events/spring-social}
+                          previewKey: {type: string}
+                          expiresAt: {type: string, format: date-time}
+        '400': {description: 'VALIDATION_FAILED (token invalid, expired or already used)', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: 'AUTH_REQUIRED (missing or wrong bearer)', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '429': {$ref: '#/components/responses/Error'}
+
+  # ----------------------------------------------------------------- Registration
+  /events/{slug}/registration:
+    get:
+      tags: [Registration]
+      summary: R01 Registration state for the signed-in player
+      parameters:
+        - {$ref: '#/components/parameters/Slug'}
+      responses:
+        '200':
+          description: |
+            `state` is one of open_free, open_paid, full_waitlist, sold_out, closed, not_yet_open, already_registered, ineligible.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        additionalProperties: true
+                        properties:
+                          state: {type: string}
+                          requiredProfileFields: {type: array, items: {type: string}}
+                          serverNow: {type: string, format: date-time}
+                          pricePaise: {type: integer}
+                          currency: {type: string, example: INR}
+                          holdMinutes: {type: integer}
+                          waitlistPosition: {type: integer}
+                          opensAt: {type: string, format: date-time}
+                          reason: {type: string, example: profile_incomplete}
+                          registration: {$ref: '#/components/schemas/Registration'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /registrations:
+    post:
+      tags: [Registration]
+      summary: R02 Reserve a place (Idempotency-Key required)
+      description: Free event returns `status=confirmed`. Paid event returns `status=pending` with a capacity hold.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventSlug]
+              additionalProperties: false
+              properties:
+                eventSlug: {type: string, maxLength: 100}
+                profile: {type: object, additionalProperties: true, description: Missing profile fields reported by R01}
+      responses:
+        '201':
+          description: Reserved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          status: {type: string, enum: [confirmed, pending]}
+                          registration: {$ref: '#/components/schemas/Registration'}
+                          holdExpiresAt: {type: string, format: date-time}
+                          serverNow: {type: string, format: date-time}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '409': {description: 'REGISTRATION_NOT_OPEN, REGISTRATION_CLOSED, EVENT_FULL or ALREADY_REGISTERED', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /registrations/waitlist:
+    post:
+      tags: [Registration]
+      summary: R03 Join the waitlist (Idempotency-Key required)
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventSlug]
+              additionalProperties: false
+              properties:
+                eventSlug: {type: string, maxLength: 100}
+      responses:
+        '201':
+          description: Waitlisted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          registration: {$ref: '#/components/schemas/Registration'}
+                          position: {type: integer}
+        '409': {$ref: '#/components/responses/Error'}
+  /registrations/{registrationId}:
+    get:
+      tags: [Registration]
+      summary: R06 Registration detail (owner only, polling-safe)
+      parameters:
+        - {$ref: '#/components/parameters/RegistrationId'}
+      responses:
+        '200':
+          description: Registration
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/Registration'}
+        '404': {$ref: '#/components/responses/Error'}
+  /registrations/{registrationId}/cancel:
+    post:
+      tags: [Registration]
+      summary: R07 Cancel a registration (Idempotency-Key optional)
+      parameters:
+        - {$ref: '#/components/parameters/RegistrationId'}
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          registration: {$ref: '#/components/schemas/Registration'}
+        '409': {description: CANCELLATION_NOT_ALLOWED, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /registrations/{registrationId}/accept-offer:
+    post:
+      tags: [Registration]
+      summary: R08 Accept a waitlist offer (Idempotency-Key required)
+      parameters:
+        - {$ref: '#/components/parameters/RegistrationId'}
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+      responses:
+        '200':
+          description: Offer accepted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          registration: {$ref: '#/components/schemas/Registration'}
+        '409': {$ref: '#/components/responses/Error'}
+  /payments/orders:
+    post:
+      tags: [Registration]
+      summary: R04 Create or return the payment order (Idempotency-Key required)
+      description: |
+        Requires a live capacity hold (`HOLD_EXPIRED` otherwise). One order per registration: a repeat returns the same
+        order. Amount, currency and key come only from this response; the browser never supplies them.
+        `PAYMENT_UNAVAILABLE` (503) when the payment provider cannot be reached.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [registrationId]
+              additionalProperties: false
+              properties:
+                registrationId: {type: string, format: uuid}
+      responses:
+        '200':
+          description: The order to open Razorpay Checkout with
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [orderId, amountPaise, currency, keyId, holdExpiresAt, serverNow]
+                        properties:
+                          orderId: {type: string, example: order_Abc123}
+                          amountPaise: {type: integer, minimum: 1}
+                          currency: {type: string, example: INR}
+                          keyId: {type: string, description: Public Razorpay key id (never the secret)}
+                          holdExpiresAt: {type: string, format: date-time}
+                          serverNow: {type: string, format: date-time}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: 'HOLD_EXPIRED or ALREADY_REGISTERED', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '503': {description: PAYMENT_UNAVAILABLE, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /payments/verify:
+    post:
+      tags: [Registration]
+      summary: R05 Verify a Checkout payment (Idempotency-Key required)
+      description: |
+        The server resolves the order and user from `razorpay_order_id` (an order that is not the caller's is 404),
+        checks the checkout signature in constant time (`INVALID_SIGNATURE`), fetches the payment from Razorpay and
+        checks order id, exact amount, currency and status (`PAYMENT_MISMATCH`), writes the ledger and confirms the
+        registration. Returns `confirming` when the payment is authorized but not yet captured. Repeats return the
+        same result. If the money arrived after the hold lapsed with no seat left, the payment is refunded
+        automatically and the call answers `HOLD_EXPIRED`.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [razorpay_order_id, razorpay_payment_id, razorpay_signature]
+              additionalProperties: false
+              properties:
+                razorpay_order_id: {type: string, maxLength: 64, pattern: '^[A-Za-z0-9_]+$'}
+                razorpay_payment_id: {type: string, maxLength: 64, pattern: '^[A-Za-z0-9_]+$'}
+                razorpay_signature: {type: string, maxLength: 128}
+      responses:
+        '200':
+          description: Registration in `confirming` or `confirmed`
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [registration]
+                        properties:
+                          registration: {$ref: '#/components/schemas/Registration'}
+        '400': {description: 'VALIDATION_FAILED or INVALID_SIGNATURE', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: 'PAYMENT_MISMATCH or HOLD_EXPIRED', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '503': {description: PAYMENT_UNAVAILABLE, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /webhooks/razorpay:
+    post:
+      tags: [Webhooks]
+      summary: W01 Razorpay webhook (inbound from Razorpay, not called by the web app)
+      description: |
+        No bearer auth, no envelope, no per-user rate limit. Authenticated only by `X-Razorpay-Signature`, the
+        HMAC-SHA256 of the RAW body with the webhook secret, checked in constant time before the JSON is parsed.
+        Failure answers 400 `{received:false}`. Each `X-Razorpay-Event-Id` is stored once; a repeat answers 200 with no
+        side effects. Handled: `payment.captured`, `payment.failed`, `order.paid`, `refund.processed`,
+        `refund.failed`; any other event is stored and acknowledged. 5xx only for transient faults (the provider retries).
+      security: []
+      parameters:
+        - {name: X-Razorpay-Signature, in: header, required: true, schema: {type: string}}
+        - {name: X-Razorpay-Event-Id, in: header, required: false, schema: {type: string, maxLength: 128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '200':
+          description: Accepted (or a duplicate)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: {type: boolean}
+                  duplicate: {type: boolean}
+        '400':
+          description: Bad or missing signature, or malformed body
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: {type: boolean, example: false}
+  # ----------------------------------------------------------------- Player area
+  /me/next-up:
+    get:
+      tags: [Player area]
+      summary: M01 Next confirmed event (data is null when none)
+      responses:
+        '200':
+          description: Next up
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        nullable: true
+                        properties:
+                          registrationId: {type: string, format: uuid}
+                          event: {$ref: '#/components/schemas/EventLink'}
+                          venue: {type: string}
+                          nextAction: {type: object, additionalProperties: true}
+                          pairing: {type: object, nullable: true, additionalProperties: true}
+  /me/recent-games:
+    get:
+      tags: [Player area]
+      summary: M02 Recent final games (default page size 5)
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of games
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {type: object, additionalProperties: true}}
+  /me/people:
+    get:
+      tags: [Player area]
+      summary: M03 Opponents played most (public identity only)
+      responses:
+        '200':
+          description: People
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            identity: {$ref: '#/components/schemas/PublicIdentity'}
+                            games: {type: integer}
+  /me/registrations:
+    get:
+      tags: [Player area]
+      summary: M04 My registrations
+      parameters:
+        - {name: scope, in: query, required: true, schema: {type: string, enum: [upcoming, history]}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of registrations
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            registration: {$ref: '#/components/schemas/Registration'}
+                            event:
+                              allOf:
+                                - $ref: '#/components/schemas/EventLink'
+                                - type: object
+                                  properties:
+                                    cover:
+                                      allOf: [{$ref: '#/components/schemas/Media'}]
+                                      nullable: true
+                                      description: 'EV-01. Event cover (public media shape); null when the event has none or the asset is archived. Additive.'
+                            canCancel: {type: boolean}
+                            cancelBlockedReason: {type: string, nullable: true}
+                            canOpenRoom: {type: boolean}
+        '400': {$ref: '#/components/responses/Error'}
+
+  # ----------------------------------------------------------------- Event room
+  /me/events/{eventId}/room:
+    get:
+      tags: [Event room]
+      summary: M05 Event room snapshot (12 requests per minute per user)
+      description: |
+        `roomState` is one of before_checkin, checkin_open, pairing_pending, live_round, between_rounds, complete.
+        Only the caller's own pairing is returned. `REGISTRATION_NOT_CONFIRMED` if the caller has no confirmed registration.
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+      responses:
+        '200':
+          description: Snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        additionalProperties: true
+                        properties:
+                          roomState: {type: string}
+                          serverNow: {type: string, format: date-time}
+                          checkIn: {$ref: '#/components/schemas/CheckIn'}
+                          result: {$ref: '#/components/schemas/ResultState'}
+                          capabilities: {type: object, additionalProperties: {type: boolean}}
+                          version: {type: string}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+  /me/events/{eventId}/check-in:
+    post:
+      tags: [Event room]
+      summary: M06 Self check-in (Idempotency-Key optional)
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Snapshot fragment
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          checkIn: {$ref: '#/components/schemas/CheckIn'}
+                          capabilities: {type: object, additionalProperties: {type: boolean}}
+                          serverNow: {type: string, format: date-time}
+                          version: {type: string}
+        '409': {description: 'CHECKIN_WINDOW_CLOSED (reason MANUAL_REQUIRED) or REGISTRATION_NOT_CONFIRMED', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /me/events/{eventId}/results:
+    post:
+      tags: [Event room]
+      summary: M07 Submit my game result (Idempotency-Key required)
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pairingId, outcome]
+              additionalProperties: false
+              properties:
+                pairingId: {type: string, format: uuid}
+                outcome: {type: string, enum: [white, black, draw]}
+      responses:
+        '200': {$ref: '#/components/responses/ResultUpdate'}
+        '403': {description: RESULT_NOT_ALLOWED, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /me/events/{eventId}/results/{pairingId}/confirm:
+    post:
+      tags: [Event room]
+      summary: M08 Opponent confirms a submitted result (Idempotency-Key optional)
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/PairingId'}
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string}}
+      responses:
+        '200': {$ref: '#/components/responses/ResultUpdate'}
+        '403': {$ref: '#/components/responses/Error'}
+  /me/events/{eventId}/results/{pairingId}/dispute:
+    post:
+      tags: [Event room]
+      summary: M09 Dispute a submitted result (Idempotency-Key optional)
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/PairingId'}
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                note: {type: string, maxLength: 500}
+      responses:
+        '200': {$ref: '#/components/responses/ResultUpdate'}
+        '403': {$ref: '#/components/responses/Error'}
+
+  # ----------------------------------------------------------------- Ratings
+  /me/ratings:
+    get:
+      tags: [Ratings]
+      summary: M10 Rating pools summary (always blitz, rapid, classical)
+      responses:
+        '200':
+          description: Map keyed by pool
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        additionalProperties: {$ref: '#/components/schemas/PoolRating'}
+  /me/ratings/{pool}/ledger:
+    get:
+      tags: [Ratings]
+      summary: M11 Rating ledger (rated rows, newest first)
+      parameters:
+        - {$ref: '#/components/parameters/Pool'}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of ledger entries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: {type: string, format: uuid}
+                            pool: {type: string}
+                            at: {type: string, format: date-time}
+                            outcome: {type: string}
+                            opponent:
+                              type: object
+                              properties:
+                                displayName: {type: string}
+                                initials: {type: string}
+                            before: {type: integer}
+                            after: {type: integer}
+                            delta: {type: integer}
+                            event:
+                              type: object
+                              properties:
+                                slug: {type: string}
+                                title: {type: string}
+        '404': {$ref: '#/components/responses/Error'}
+  /me/ratings/{pool}/trend:
+    get:
+      tags: [Ratings]
+      summary: M12 Rating trend series
+      parameters:
+        - {$ref: '#/components/parameters/Pool'}
+        - {name: days, in: query, schema: {type: integer, minimum: 7, maximum: 365}}
+      responses:
+        '200':
+          description: Series
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            at: {type: string, format: date-time}
+                            rating: {type: integer}
+        '400': {$ref: '#/components/responses/Error'}
+
+  # ----------------------------------------------------------------- Admin
+  /admin/ping:
+    get:
+      tags: [Admin]
+      summary: Admin foundation check (401 anonymous, 403 non-admin)
+      responses:
+        '200': {$ref: '#/components/responses/EmptyOk'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: D01 Dashboard aggregates (next or today's event, pending payments, website health, attention)
+      responses:
+        '200':
+          description: Dashboard summary; `event` is null when no upcoming event
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/DashboardSummary'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /admin/events:
+    get:
+      tags: [Admin]
+      summary: E01 List events (all statuses, newest start first)
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [draft, published, registration_open, sold_out, ongoing, completed, cancelled]}}
+        - {name: type, in: query, schema: {type: string, enum: [social, rated_tournament, league, workshop, special]}}
+        - {name: q, in: query, description: Title or slug contains (max 100), schema: {type: string, maxLength: 100}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of rows (`pageSize` is accepted as an alias of `page_size`, max 100)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/AdminEventRow'}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Admin]
+      summary: E02 Create a draft (any step may be incomplete; Idempotency-Key optional)
+      description: 'A sent `Idempotency-Key` is honoured, so a replay returns the original 201 with `Idempotent-Replay` true.'
+      parameters:
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              additionalProperties: false
+              properties:
+                title: {type: string, minLength: 1, maxLength: 120}
+                type: {type: string, enum: [social, rated_tournament, league, workshop, special], default: social}
+                slug: {type: string, minLength: 3, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'}
+      responses:
+        '201':
+          description: The builder resource
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/BuilderDraft'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {description: SLUG_TAKEN, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/events/{eventId}:
+    parameters:
+      - {$ref: '#/components/parameters/EventId'}
+    get:
+      tags: [Admin]
+      summary: E03 Full builder resource (8 steps, lockedFields, readiness blockers, version)
+      responses:
+        '200':
+          description: The builder resource
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/BuilderDraft'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {description: EVENT_NOT_FOUND, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+    patch:
+      tags: [Admin]
+      summary: E04 Partial update of one or more steps
+      description: |
+        Strict at every level (unknown keys are rejected, status changes use publish/unpublish/cancel/complete).
+        `409 VERSION_CONFLICT` when `version` is stale. `400 VALIDATION_FAILED` for a locked field (price, capacity,
+        pairing mode, rated, pool) once registrations or payments exist, with the text reason in `fields`.
+        `409 SLUG_LOCKED` for a slug change after first publish, `409 SLUG_TAKEN`. Every rejected field is named in
+        `error.fields` by its exact builder path (`basics.slug`, `registration.capacity`, `basics.endsAt`, ...), including
+        SLUG_TAKEN, SLUG_LOCKED, locked fields and model validation errors (mapped from snake_case), so a client can drop
+        that field from its pending patch. `registration.capacity` null (or an empty string) means unlimited. `basics.slug`
+        null clears the slug of a draft. Re-sending an unchanged value (including the media collection id) is a no-op: no
+        version bump, no audit row. Changing an operational field
+        (capacity, waitlist, min age, membership, price, refund window, hold, rated, pool, pairing mode, rounds,
+        audience) of a public event needs `X-Step-Up-Token` (`401 STEP_UP_REQUIRED`). Operational changes are audited
+        as `event.update_operational`. Blank highlight/FAQ/logistics rows are dropped; a half-filled row is rejected.
+      parameters:
+        - {name: X-Step-Up-Token, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              additionalProperties: false
+              properties:
+                version: {type: integer, minimum: 0}
+                basics:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    title: {type: string, minLength: 1, maxLength: 120}
+                    slug: {type: string, minLength: 3, maxLength: 80}
+                    type: {type: string, enum: [social, rated_tournament, league, workshop, special]}
+                    promise: {type: string, maxLength: 200}
+                    startsAt: {type: string, format: date-time, nullable: true}
+                    endsAt: {type: string, format: date-time, nullable: true}
+                    venueName: {type: string, maxLength: 120}
+                    address: {type: string, maxLength: 300}
+                    area: {type: string, maxLength: 80}
+                    city: {type: string, maxLength: 80}
+                    audience: {type: string, enum: [all_levels, beginner, solo]}
+                experience:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    description: {type: string, maxLength: 4000}
+                    eyebrow: {type: string, maxLength: 60}
+                    heading: {type: string, maxLength: 160}
+                    body: {type: string, maxLength: 1200}
+                    highlights: {type: array, maxItems: 8, items: {type: object, properties: {title: {type: string, maxLength: 80}, body: {type: string, maxLength: 300}}}}
+                    logistics: {type: array, maxItems: 12, items: {type: string, maxLength: 400}}
+                    faq: {type: array, maxItems: 20, items: {type: object, properties: {question: {type: string, maxLength: 200}, answer: {type: string, maxLength: 1500}}}}
+                    hostedArrival: {type: boolean}
+                registration:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    capacity: {type: integer, minimum: 1, maximum: 100000, nullable: true}
+                    waitlistEnabled: {type: boolean}
+                    opensAt: {type: string, format: date-time, nullable: true}
+                    closesAt: {type: string, format: date-time, nullable: true}
+                    membershipRequired: {type: boolean}
+                    askFirstTimer: {type: boolean}
+                    minAge: {type: integer, minimum: 0, maximum: 120, nullable: true}
+                payment:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    pricePaise: {type: integer, minimum: 0, maximum: 100000000}
+                    refundWindowHours: {type: integer, minimum: 0, maximum: 1440, nullable: true}
+                    holdMinutes: {type: integer, minimum: 1, maximum: 60}
+                gameSystem:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    rated: {type: boolean}
+                    pool: {type: string, enum: [blitz, rapid, classical]}
+                    pairingMode: {type: string, enum: [social_balanced, swiss, round_robin, none]}
+                    rounds: {type: integer, minimum: 1, maximum: 20, nullable: true}
+                    timeControl: {type: string, maxLength: 60}
+                media:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    collectionId: {type: string, pattern: '^[0-9]+$', nullable: true, description: Media collection id (integer key sent as a string)}
+                    mode: {type: string, enum: [static, carousel]}
+                communications:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    triggers:
+                      type: object
+                      additionalProperties: false
+                      properties:
+                        confirmation: {type: boolean}
+                        reminder_24h: {type: boolean}
+                        checkin_open: {type: boolean}
+                        pairing_published: {type: boolean}
+                        post_event: {type: boolean}
+                    channels: {type: array, items: {type: string, enum: [email]}, minItems: 1, maxItems: 1}
+      responses:
+        '200':
+          description: The updated builder resource (`version` bumped; unchanged when nothing changed)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/BuilderDraft'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {description: 'STEP_UP_REQUIRED', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: 'VERSION_CONFLICT, SLUG_LOCKED or SLUG_TAKEN', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/slugs/check:
+    get:
+      tags: [Admin]
+      summary: E05 Is a slug free (event or story)?
+      parameters:
+        - {name: type, in: query, required: true, schema: {type: string, enum: [event, story]}}
+        - {name: slug, in: query, required: true, schema: {type: string, minLength: 3, maxLength: 80}}
+        - {name: excludeId, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: '`{available: true}` or `{available: false, suggestion?}`'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [available]
+                        properties:
+                          available: {type: boolean}
+                          suggestion: {type: string}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /admin/event-types:
+    get:
+      tags: [Admin]
+      summary: E06 Event types with their configurable defaults
+      responses:
+        '200':
+          description: 'Five rows (league and workshop have engineAvailable false)'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            type: {type: string}
+                            label: {type: string}
+                            defaultPairingMode: {type: string, enum: [social_balanced, swiss, round_robin, none]}
+                            defaultRated: {type: boolean}
+                            engineAvailable: {type: boolean}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /admin/media/uploads:
+    post:
+      tags: [Admin]
+      summary: S07 Issue a signed upload URL (the server never receives the bytes)
+      description: 'JPEG, PNG, WebP or AVIF up to 10 MB. The object key is random (`media/<uuid>.<ext>`), never derived from the filename. PUT the file to `uploadUrl` with the returned `headers`, then call complete (S08). At most 50 pending uploads per admin (RATE_LIMITED). STORAGE_UNAVAILABLE (503) when storage cannot sign.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, contentType, sizeBytes]
+              additionalProperties: false
+              properties:
+                filename: {type: string, minLength: 1, maxLength: 200}
+                contentType: {type: string, enum: [image/jpeg, image/png, image/webp, image/avif]}
+                sizeBytes: {type: integer, minimum: 1, maximum: 10485760}
+      responses:
+        '201':
+          description: Signed upload ticket
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [assetId, uploadUrl, method, headers, expiresAt, maxBytes]
+                        properties:
+                          assetId: {type: string, format: uuid}
+                          uploadUrl: {type: string, description: 'Supabase signed URL (https, the configured storage host). Fake mode (dev): an absolute URL built from `BACKEND_PUBLIC_URL`, else from the request host (http://localhost:8000/api/dev-storage/upload/<token>). The web type still requires https, so set an https `BACKEND_PUBLIC_URL` to pass its check.'}
+                          method: {type: string, enum: [PUT]}
+                          headers: {type: object, additionalProperties: {type: string}}
+                          expiresAt: {type: string, format: date-time}
+                          maxBytes: {type: integer}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /admin/media/assets:
+    get:
+      tags: [Admin]
+      summary: S09 List media assets
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}, description: 'Matches alt text, credit and original filename'}
+        - {name: status, in: query, schema: {type: string, enum: [active, archived, all], default: active}}
+        - {name: missingAlt, in: query, schema: {type: boolean}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of assets (newest first)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/MediaAsset'}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /admin/media/assets/{assetId}/complete:
+    post:
+      tags: [Admin]
+      summary: S08 Complete an upload (verify object, read dimensions, strip EXIF, record the asset)
+      description: 'Reads the uploaded object back, checks that the bytes match the declared type, rejects animated or oversized images, re-encodes the image without EXIF/GPS metadata, then creates the asset (201). Calling again returns the same asset (200). 400 VALIDATION_FAILED `fields.file` when the file is missing or invalid (an invalid file is deleted).'
+      parameters:
+        - {name: assetId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Already completed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/MediaAsset'}
+        '201':
+          description: Asset created. `warnings` contains ALT_MISSING until alt text is set.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/MediaAsset'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /admin/media/assets/{assetId}:
+    parameters:
+      - {name: assetId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [Admin]
+      summary: Read one media asset
+      responses:
+        '200':
+          description: The asset
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/MediaAsset'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Admin]
+      summary: S10 Update alt text, decorative flag, focal point, credit or archive state
+      description: 'Missing alt text warns (`data.warnings[]` with code ALT_MISSING) and never blocks. Archiving hides the asset from the library and from new collections; existing references keep working. Each change writes one revalidation row per referencing entity. `version` is optional; when sent, a stale value returns VERSION_CONFLICT.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                version: {type: integer, minimum: 0}
+                alt: {type: string, maxLength: 300}
+                decorative: {type: boolean}
+                focal:
+                  type: object
+                  additionalProperties: false
+                  required: [x, y]
+                  properties:
+                    x: {type: number, minimum: 0, maximum: 1}
+                    y: {type: number, minimum: 0, maximum: 1}
+                focalX: {type: number, minimum: 0, maximum: 1, deprecated: true, description: Legacy; use focal}
+                focalY: {type: number, minimum: 0, maximum: 1, deprecated: true, description: Legacy; use focal}
+                credit: {type: string, maxLength: 200}
+                archived: {type: boolean, deprecated: true, description: Legacy; use status}
+                status:
+                  type: string
+                  enum: [draft, published, archived]
+                  description: '`archived` archives; `draft` and `published` unarchive (the displayed status is derived from usage). `published` needs alt text or `decorative` (422 NOT_PUBLISHABLE, `fields.alt`).'
+      responses:
+        '200':
+          description: The asset after the change
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/MediaAsset'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+    delete:
+      tags: [Admin]
+      summary: S11 Delete an unreferenced asset
+      description: 'ASSET_IN_USE (409) while a collection, event cover, story cover or testimonial portrait uses it; archive instead (S10). The storage object is removed after commit.'
+      responses:
+        '200': {$ref: '#/components/responses/EmptyOk'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: ASSET_IN_USE, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/media/collections:
+    get:
+      tags: [Admin]
+      summary: S12 List media collections
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of collections (without items; `itemCount` only)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/AdminMediaCollection'}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Admin]
+      summary: S12 Create a media collection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              additionalProperties: false
+              properties:
+                name: {type: string, minLength: 1, maxLength: 120}
+                mode: {type: string, enum: [static, carousel]}
+                autoplay: {type: boolean}
+                intervalMs: {type: integer, minimum: 2000, maximum: 60000}
+                items:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    required: [assetId]
+                    additionalProperties: false
+                    properties:
+                      assetId: {type: string, format: uuid}
+      responses:
+        '201':
+          description: The collection with ordered items
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AdminMediaCollection'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /admin/media/collections/{collectionId}:
+    parameters:
+      - {name: collectionId, in: path, required: true, schema: {type: string, pattern: '^[0-9]+$'}}
+    get:
+      tags: [Admin]
+      summary: S12 Read a media collection with ordered items
+      responses:
+        '200':
+          description: The collection
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AdminMediaCollection'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Admin]
+      summary: S12 Update a media collection
+      description: '`items` replaces the whole ordered list. Archived assets cannot be added. One revalidation row is written per entity that shows the collection. `version` is optional; when sent, a stale value returns VERSION_CONFLICT.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                version: {type: integer, minimum: 0}
+                name: {type: string, minLength: 1, maxLength: 120}
+                mode: {type: string, enum: [static, carousel]}
+                autoplay: {type: boolean}
+                intervalMs: {type: integer, minimum: 2000, maximum: 60000}
+                items:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    required: [assetId]
+                    additionalProperties: false
+                    properties:
+                      assetId: {type: string, format: uuid}
+      responses:
+        '200':
+          description: The collection after the change
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AdminMediaCollection'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/cms/sections:
+    get:
+      tags: [Admin]
+      summary: S01 List CMS sections
+      description: 'One row per section key (home, community, nav, footer, meta). `status`: `clean` = nothing saved or published yet; `draft` = a working copy that differs from the live copy; `published` = live and no pending changes. `version` is the draft counter (0 = no draft yet).'
+      responses:
+        '200':
+          description: Sections
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/AdminCmsSectionRow'}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /admin/cms/sections/{key}:
+    parameters:
+      - {$ref: '#/components/parameters/CmsKey'}
+    get:
+      tags: [Admin]
+      summary: S02 Read a section (draft and published side by side)
+      responses:
+        '200': {$ref: '#/components/responses/AdminCmsSectionOk'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/cms/sections/{key}/draft:
+    parameters:
+      - {$ref: '#/components/parameters/CmsKey'}
+    put:
+      tags: [Admin]
+      summary: S03 Save the section draft
+      description: 'Typed content only (no HTML; link schemes http, https, mailto, tel). Send `version` as last read (0 when there is no draft). A stale version returns VERSION_CONFLICT with `reason` naming the other editor. Saving identical content does not bump the version. The response is the section detail plus `savedAt` (ISO instant of the saved draft).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, content]
+              additionalProperties: false
+              properties:
+                version: {type: integer, minimum: 0}
+                content: {type: object, description: 'Section content in the public shape. A media collection may be sent resolved ({mode, autoplay, intervalMs, items}, as the read returns it) or as the legacy {collection: key} reference. A resolved collection is mapped server-side to a collection key: the one already referenced at that place, else any collection with identical settings and images (items matched by `src`), else a new collection is created. Stored as {collection: key}.'}
+                summary: {type: string, maxLength: 300}
+      responses:
+        '200': {$ref: '#/components/responses/AdminCmsSectionOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/cms/sections/{key}/publish:
+    parameters:
+      - {$ref: '#/components/parameters/CmsKey'}
+      - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+    post:
+      tags: [Admin]
+      summary: S04 Publish the section draft (Idempotency-Key required)
+      description: 'Re-validates the draft, writes the live copy and an immutable history row, and writes the `site/{key}` revalidation outbox row in the same transaction. NOT_PUBLISHABLE (422) with `blockers[]` when there is no draft (`NO_DRAFT`), it matches the live copy (`NO_CHANGES`) or it no longer validates (`INVALID_CONTENT`).'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                version: {type: integer, minimum: 0, description: 'Optional draft version last read; a stale value returns VERSION_CONFLICT'}
+                summary: {type: string, maxLength: 300}
+      responses:
+        '200': {$ref: '#/components/responses/CmsPublishOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: 'VERSION_CONFLICT or IDEMPOTENCY_CONFLICT', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '422': {description: NOT_PUBLISHABLE, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/cms/sections/{key}/versions:
+    parameters:
+      - {$ref: '#/components/parameters/CmsKey'}
+    get:
+      tags: [Admin]
+      summary: S05 Publish history of a section (newest first)
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of versions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            version: {type: integer, description: Publish number (same value as `number`; the web field name)}
+                            number: {type: integer}
+                            publishedAt: {type: string, format: date-time}
+                            publishedBy: {$ref: '#/components/schemas/AdminPerson'}
+                            summary: {type: string, nullable: true}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/legal/{page}:
+    parameters:
+      - {name: page, in: path, required: true, schema: {type: string, enum: [privacy, terms, refund-policy]}}
+    get:
+      tags: [Admin]
+      summary: S06 Read a legal page (draft and published side by side)
+      responses:
+        '200': {$ref: '#/components/responses/AdminLegalOk'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    put:
+      tags: [Admin]
+      summary: S06 Save the legal page draft
+      description: 'Blocks use the closed block model (heading, paragraph, quote, image, list, link). An image block may send `assetId` instead of the inline `media` object. Send `version` as last read (0 when there is no draft).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, title, blocks, effectiveDate]
+              additionalProperties: false
+              properties:
+                version: {type: integer, minimum: 0}
+                title: {type: string, minLength: 1, maxLength: 120}
+                blocks: {type: array, maxItems: 200, items: {type: object}}
+                effectiveDate: {type: string, format: date}
+                summary: {type: string, maxLength: 300}
+      responses:
+        '200': {$ref: '#/components/responses/AdminLegalOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/legal/{page}/publish:
+    parameters:
+      - {name: page, in: path, required: true, schema: {type: string, enum: [privacy, terms, refund-policy]}}
+      - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+    post:
+      tags: [Admin]
+      summary: S06 Publish the legal page draft (Idempotency-Key required)
+      description: 'Same rules as S04. Writes the `legal/{page}` revalidation outbox row (`published` the first time, `updated` after). Production wording approval is a process gate outside this API.'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                version: {type: integer, minimum: 0}
+                summary: {type: string, maxLength: 300}
+      responses:
+        '200': {$ref: '#/components/responses/CmsPublishOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: 'VERSION_CONFLICT or IDEMPOTENCY_CONFLICT', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '422': {description: NOT_PUBLISHABLE, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/stories:
+    get:
+      tags: [Admin]
+      summary: S13 List stories (without body)
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [draft, published]}}
+        - {name: kind, in: query, schema: {type: string, enum: [club_notes, event_notes, rivalries]}}
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of stories
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/AdminStory'}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Admin]
+      summary: S13 Create a story draft
+      description: 'Always created as a draft. SLUG_TAKEN (409) when the slug is in use. `body` is a closed list of blocks; an image block may send `assetId` instead of the inline `media` object.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminStoryInput'}
+      responses:
+        '201': {$ref: '#/components/responses/AdminStoryOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {description: SLUG_TAKEN, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/stories/{storyId}:
+    parameters:
+      - {$ref: '#/components/parameters/StoryId'}
+    get:
+      tags: [Admin]
+      summary: S13 Read a story
+      responses:
+        '200': {$ref: '#/components/responses/AdminStoryOk'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Admin]
+      summary: S13 Update a story
+      description: 'Edits to a published story are live at once and revalidate. SLUG_LOCKED (409) when the slug changes after the first publish. `version` is optional; a stale value returns VERSION_CONFLICT.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AdminStoryInput'
+                - type: object
+                  properties:
+                    version: {type: integer, minimum: 0}
+      responses:
+        '200': {$ref: '#/components/responses/AdminStoryOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: 'SLUG_TAKEN, SLUG_LOCKED or VERSION_CONFLICT', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/stories/{storyId}/publish:
+    parameters:
+      - {$ref: '#/components/parameters/StoryId'}
+      - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+    post:
+      tags: [Admin]
+      summary: S14 Publish a story (Idempotency-Key required)
+      description: 'NOT_PUBLISHABLE (422) with `blockers[]` when title, eyebrow, dek or body is missing or the story is already published. SLUG_TAKEN (409). Writes the `story/published` revalidation row.'
+      responses:
+        '200': {$ref: '#/components/responses/CmsStateOk'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: 'SLUG_TAKEN or IDEMPOTENCY_CONFLICT', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '422': {description: NOT_PUBLISHABLE, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/stories/{storyId}/unpublish:
+    parameters:
+      - {$ref: '#/components/parameters/StoryId'}
+    post:
+      tags: [Admin]
+      summary: S14 Unpublish a story
+      description: 'Back to draft; the slug stays locked. Writes `story/unpublished`. NOT_PUBLISHABLE (422) when it is not published.'
+      responses:
+        '200': {$ref: '#/components/responses/CmsStateOk'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {description: NOT_PUBLISHABLE, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/preview-link:
+    post:
+      tags: [Admin]
+      summary: PV01 Create a draft preview link
+      description: 'Returns an absolute `url` (`FRONTEND_URL` + `/api/draft?token=...`; the web `previewLinkSchema` accepts https only, so a local http `FRONTEND_URL` yields a URL the web rejects) whose single-use token expires in 5 minutes; the web app exchanges it with POST /preview/exchange. `kind` event takes an event id (the event needs a slug), story takes a story id, site takes a site section key (home, community, nav, footer, meta) or a legal page (privacy, terms, refund-policy). Audited as `preview.link`. The response is `no-store`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, id]
+              properties:
+                kind: {type: string, enum: [event, story, site]}
+                id: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: Link created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          url: {type: string, example: 'https://pgchess.in/api/draft?token=abc'}
+                          expiresAt: {type: string, format: date-time}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/testimonials:
+    get:
+      tags: [Admin]
+      summary: S15 List testimonials
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [draft, published]}}
+        - {name: filter, in: query, schema: {type: string, enum: [missing-consent]}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of testimonials
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/AdminTestimonial'}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Admin]
+      summary: S15 Create a testimonial draft
+      description: 'Always created as a draft. The quote is stored exactly as sent.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminTestimonialInput'}
+      responses:
+        '201': {$ref: '#/components/responses/AdminTestimonialOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /admin/testimonials/{testimonialId}:
+    parameters:
+      - {$ref: '#/components/parameters/TestimonialId'}
+    get:
+      tags: [Admin]
+      summary: S15 Read a testimonial
+      responses:
+        '200': {$ref: '#/components/responses/AdminTestimonialOk'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Admin]
+      summary: S15 Update a testimonial
+      description: 'A published testimonial cannot lose its quote, portrait or consent: NOT_PUBLISHABLE (422), unpublish first. `version` is optional; a stale value returns VERSION_CONFLICT.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AdminTestimonialInput'
+                - type: object
+                  properties:
+                    version: {type: integer, minimum: 0}
+      responses:
+        '200': {$ref: '#/components/responses/AdminTestimonialOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '422': {description: NOT_PUBLISHABLE, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/testimonials/{testimonialId}/publish:
+    parameters:
+      - {$ref: '#/components/parameters/TestimonialId'}
+      - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+    post:
+      tags: [Admin]
+      summary: S16 Publish a testimonial (Idempotency-Key required)
+      description: 'Consent gate: needs quote, name, descriptor, portrait and consentAt. NOT_PUBLISHABLE (422) with `blockers[]` (`REQUIRED`, `CONSENT_REQUIRED`, `ASSET_ARCHIVED`, `ALREADY_PUBLISHED`) and `fields`. Writes `testimonial/published`.'
+      responses:
+        '200': {$ref: '#/components/responses/CmsStateOk'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {description: NOT_PUBLISHABLE, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/testimonials/{testimonialId}/unpublish:
+    parameters:
+      - {$ref: '#/components/parameters/TestimonialId'}
+    post:
+      tags: [Admin]
+      summary: S16 Unpublish a testimonial
+      description: 'Back to draft; writes `testimonial/unpublished`. NOT_PUBLISHABLE (422) when it is not published.'
+      responses:
+        '200': {$ref: '#/components/responses/CmsStateOk'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {description: NOT_PUBLISHABLE, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/events/{eventId}/publish:
+    post:
+      tags: [Admin]
+      summary: E07 Publish a draft (Idempotency-Key required)
+      description: |
+        `422 NOT_PUBLISHABLE` with `error.blockers[]` (and `error.fields`) when the draft is not ready or not a draft;
+        `409 SLUG_TAKEN` (named in `error.fields["basics.slug"]`). Blockers: required copy, a future start, registration
+        closes after it opens and no later than the event start (`registration.closesAt`), and, when a media collection
+        is set, at least one image with alt text or marked decorative (`media.collectionId`). Capacity is NOT required:
+        a null capacity is an unlimited event. Stamps the first-publish time (slug is locked from now on), writes an audit row and an
+        `event/published` revalidation outbox row in the same transaction.
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: {type: string, format: uuid}
+                          slug: {type: string}
+                          status: {type: string, example: published}
+                          publishedAt: {type: string, format: date-time}
+                          version: {type: integer}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: SLUG_TAKEN, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '422': {description: 'NOT_PUBLISHABLE (error.blockers[])', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/events/{eventId}/unpublish:
+    post:
+      tags: [Admin]
+      summary: E08 Unpublish (Idempotency-Key optional; back to draft; only with no confirmed registrations or payment in flight)
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Back to draft; the slug stays locked
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: {type: string, format: uuid}
+                          status: {type: string, example: draft}
+                          version: {type: integer}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {description: 'NOT_PUBLISHABLE (error.blockers[])', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/events/{eventId}/cancel:
+    post:
+      tags: [Admin]
+      summary: E09 Cancel an event (Idempotency-Key required)
+      description: |
+        Cancels, releases holds, waitlist and offers, and (when `refund` is true) queues a refund for every paid
+        confirmed registration with `refund_payment(execute=False)`, executed after commit. A provider outage leaves
+        refunds pending for the retry job. Needs `X-Step-Up-Token` when any refundable payment exists. Emits
+        `event/cancelled`. **`notifyParticipants` is NOT implemented**: it is only recorded in the audit row and no participant message is sent (needs a cancellation email template, BE-11).
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+        - {name: X-Step-Up-Token, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, notifyParticipants, refund]
+              additionalProperties: false
+              properties:
+                reason: {type: string, minLength: 1, maxLength: 500}
+                notifyParticipants: {type: boolean}
+                refund: {type: boolean}
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: {type: string, format: uuid}
+                          status: {type: string, example: cancelled}
+                          cancelledAt: {type: string, format: date-time}
+                          refundsQueued: {type: integer}
+                          version: {type: integer}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {description: 'STEP_UP_REQUIRED', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: CANCELLATION_NOT_ALLOWED (draft, ongoing, completed or cancelled), content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/events/{eventId}/complete:
+    post:
+      tags: [Admin]
+      summary: E10 Mark an event completed (Idempotency-Key optional; it must have started)
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string, format: uuid}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                publishArchive: {type: boolean}
+      responses:
+        '200':
+          description: Completed (emits `event/completed`)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: {type: string, format: uuid}
+                          status: {type: string, example: completed}
+                          completedAt: {type: string, format: date-time}
+                          version: {type: integer}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/rounds:
+    get:
+      tags: [Admin]
+      summary: C06 Rounds of an event (bounded, at most 30) with pairings, results and capabilities
+      description: "Each round carries `state`, `version` (optimistic token), `pairingVersion`, `unresolvedResults` and `capabilities` (canEdit, canPublish, canStart, canFinalise). A disabled capability always has a `reason`; canPublish and canFinalise add `blockers[]` (for example RESULTS_NOT_FINAL)."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+      responses:
+        '200':
+          description: Rounds
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          rounds: {type: array, maxItems: 30, items: {$ref: '#/components/schemas/AdminRound'}}
+                          serverNow: {type: string, format: date-time}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/rounds/generate:
+    post:
+      tags: [Admin]
+      summary: C07 Generate an UNPUBLISHED draft round (Idempotency-Key optional)
+      description: "Pairs checked-in players (all confirmed players when nobody has checked in) by rating, score, opponent history and colour balance. `method` defaults to the event pairing mode; swiss and social_balanced are supported. Odd fields get a bye (fewest earlier byes first). No FIDE compliance is claimed. `roundNo` must be the next round, or an existing draft (which is regenerated); the previous round must be finalised. Returns 201 for a new draft and 200 when a draft was regenerated."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roundNo]
+              additionalProperties: false
+              properties:
+                roundNo: {type: integer, minimum: 1, maximum: 100}
+                method: {type: string, enum: [social_balanced, swiss, round_robin, none]}
+      responses:
+        '200': {$ref: '#/components/responses/AdminRoundOk'}
+        '201': {$ref: '#/components/responses/AdminRoundOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/rounds/{roundId}/pairings:
+    patch:
+      tags: [Admin]
+      summary: C08 Edit boards, players, colours and byes
+      description: "Replaces the full set of boards and byes. A draft edit (`phase` draft) takes no reason. A published or live round (`phase` after_publish) needs a `reason`, creates a new pairing version, is audited, and cannot change a board that already has a result. Colour swaps are expressed by swapping the two registration ids. 409 VERSION_CONFLICT when `version` is stale."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/RoundId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phase, version, boards, byes]
+              additionalProperties: false
+              properties:
+                phase: {type: string, enum: [draft, after_publish]}
+                version: {type: integer, minimum: 0}
+                reason: {type: string, maxLength: 500}
+                boards:
+                  type: array
+                  maxItems: 500
+                  items:
+                    type: object
+                    required: [board, whiteRegistrationId, blackRegistrationId]
+                    additionalProperties: false
+                    properties:
+                      pairingId: {type: string, format: uuid}
+                      board: {type: integer, minimum: 1, maximum: 500}
+                      whiteRegistrationId: {type: string, format: uuid}
+                      blackRegistrationId: {type: string, format: uuid}
+                byes:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    required: [registrationId]
+                    additionalProperties: false
+                    properties:
+                      registrationId: {type: string, format: uuid}
+      responses:
+        '200': {$ref: '#/components/responses/AdminRoundOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/events/{eventId}/rounds/{roundId}/publish:
+    post:
+      tags: [Admin]
+      summary: C09 Publish a draft round (Idempotency-Key required)
+      description: "Draft to published. Players see the pairing in the event room snapshot. Emits no site revalidation. 422 NOT_PUBLISHABLE with `error.blockers[]` (NO_PAIRINGS, PLAYER_NOT_CONFIRMED, ROUND_NOT_DRAFT). Player notification delivery arrives with BE-11."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/RoundId'}
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+      requestBody: {$ref: '#/components/requestBodies/RoundVersion'}
+      responses:
+        '200': {$ref: '#/components/responses/AdminRoundOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '422': {description: 'NOT_PUBLISHABLE (error.blockers[])', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/events/{eventId}/rounds/{roundId}/start:
+    post:
+      tags: [Admin]
+      summary: C10 Start a published round (published to live)
+      description: Players can submit results from now on.
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/RoundId'}
+      requestBody: {$ref: '#/components/requestBodies/RoundVersion'}
+      responses:
+        '200': {$ref: '#/components/responses/AdminRoundOk'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/events/{eventId}/rounds/{roundId}/pairings/{pairingId}/result:
+    put:
+      tags: [Admin]
+      summary: C11 Record or override a result, or resolve a dispute (reason mandatory, audited)
+      description: "`action` record enters or overrides a result as final; resolve settles a disputed result. The round must be live and the board a game. 403 RESULT_NOT_ALLOWED otherwise (including resolve on a result that is not disputed)."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/RoundId'}
+        - {$ref: '#/components/parameters/PairingId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, outcome, reason]
+              additionalProperties: false
+              properties:
+                action: {type: string, enum: [record, resolve]}
+                outcome: {type: string, enum: [white, black, draw]}
+                reason: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '200':
+          description: Updated pairing and round counters
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          pairing: {$ref: '#/components/schemas/AdminPairing'}
+                          unresolvedResults: {type: integer}
+                          canFinalise: {$ref: '#/components/schemas/CapabilityFlag'}
+                          roundVersion: {type: integer}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/rounds/{roundId}/finalise:
+    post:
+      tags: [Admin]
+      summary: C12 Finalise a live round and process ratings (Idempotency-Key required)
+      description: "Only when every game result is final (409 RESULTS_NOT_FINAL with `error.blockers[]`). In one transaction the round is locked, the Glicko-2 update runs once from a single pre-round snapshot (ledger rows first, ratings second), `ratings_processed_at` is set and the round becomes completed. Unrated and social events write no deltas. The same Idempotency-Key returns the original success; any other key on a finalised round returns 409 ROUND_ALREADY_FINALIZED."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/RoundId'}
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+      requestBody: {$ref: '#/components/requestBodies/RoundVersion'}
+      responses:
+        '200':
+          description: Finalised
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          roundId: {type: string, format: uuid}
+                          state: {type: string, example: completed}
+                          finalisedAt: {type: string, format: date-time}
+                          ratingProcessing: {$ref: '#/components/schemas/AdminRatingProcessing'}
+                          version: {type: integer}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: 'RESULTS_NOT_FINAL, ROUND_ALREADY_FINALIZED or VERSION_CONFLICT', content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
+  /admin/events/{eventId}/overview:
+    get:
+      tags: [Admin]
+      summary: C01 Control room overview (summary strip, run of show, arrival metrics, pairing summary)
+      description: "A draft event has no control room (404 EVENT_NOT_FOUND). `runOfShow[].done` is server state. `capabilities` has canComplete and canCancel, each with a `reason` when disabled."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+      responses:
+        '200':
+          description: Overview (EventOverviewDto)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          eventId: {type: string, format: uuid}
+                          slug: {type: string, nullable: true}
+                          title: {type: string}
+                          status: {type: string}
+                          startsAt: {type: string, format: date-time}
+                          summary: {type: object, properties: {confirmed: {type: integer}, waitlist: {type: integer}, firstTimers: {type: integer}, checkedIn: {type: integer}, capacity: {type: integer, nullable: true}}}
+                          arrival: {type: object, properties: {checkedIn: {type: integer}, expected: {type: integer}, welcomedFirstTimers: {type: integer}}}
+                          pairing: {type: object, properties: {mode: {type: string}, roundsPlanned: {type: integer, nullable: true}, currentRound: {type: integer}, currentRoundState: {type: string, nullable: true}}}
+                          runOfShow: {type: array, maxItems: 40, items: {type: object, properties: {key: {type: string}, label: {type: string}, dueAt: {type: string, format: date-time, nullable: true}, done: {type: boolean}}}}
+                          capabilities: {type: object, properties: {canComplete: {type: object}, canCancel: {type: object}}}
+                          serverNow: {type: string, format: date-time}
+                          version: {type: integer}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/registrations:
+    get:
+      tags: [Admin]
+      summary: C02 Registrations of an event (admin only; the only place registration PII is returned)
+      description: "Page of AdminRegistrationDto (id, playerId, name, email, phone, rating, firstTimer, status, paymentState, checkedInAt, welcomed, pairingActive, registeredAt, capabilities, version). Status `offer` is projected as `waitlist`; an expired hold is `cancelled`. `capabilities` has canCancel, canMoveToWaitlist, canPromote, canMarkWelcomed and canSetPairingActive, each with a `reason` when disabled."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {name: q, in: query, description: Name, phone or registration id (max 100), schema: {type: string, maxLength: 100}}
+        - {name: payment, in: query, schema: {type: string, enum: [created, attempted, paid, failed, expired, refunded]}}
+        - {name: status, in: query, schema: {type: string, enum: [pending, confirming, confirmed, waitlist, cancelled, refunded]}}
+        - {name: firstTimer, in: query, schema: {type: boolean}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of registrations (`meta.pagination`)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {type: object}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/registrations/{regId}/actions:
+    post:
+      tags: [Admin]
+      summary: C03 Registration action (the only way registration state changes besides refund)
+      description: "`cancel` and `move_to_waitlist` need `reason`. `cancel` releases the seat, settles the waitlist and, for a captured payment, requires a step-up token (`X-Step-Up-Token`, else 401 STEP_UP_REQUIRED) and starts a refund that is sent to the provider after commit. `promote` offers a free seat to a waitlisted player. `move_to_waitlist` is refused for a paid place. `set_pairing_active` toggles whether the player is included in generated rounds. A disabled action returns 400 VALIDATION_FAILED with `fields.action`. Audited. `Idempotency-Key` is honoured when sent."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {name: regId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: false, schema: {type: string, format: uuid}}
+        - {name: X-Step-Up-Token, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              additionalProperties: false
+              properties:
+                action: {type: string, enum: [cancel, move_to_waitlist, promote, mark_welcomed, set_pairing_active]}
+                reason: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '200':
+          description: The updated AdminRegistrationDto
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {description: STEP_UP_REQUIRED or AUTH_REQUIRED, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/check-in:
+    get:
+      tags: [Admin]
+      summary: C05 Host desk list (search, arrival counts, first-timer queue)
+      description: "`counts` are for the whole event. `rows` is a nested page object (`items`, `pagination` with camelCase keys). Filter `first_timers_unwelcomed` is the first-timer queue; `assignee` is the host who welcomed the player."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {name: filter, in: query, schema: {type: string, enum: [all, arrived, not_arrived, first_timers_unwelcomed]}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Desk (CheckInDeskDto)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          counts: {type: object, properties: {expected: {type: integer}, arrived: {type: integer}, firstTimersWaiting: {type: integer}}}
+                          rows: {type: object, properties: {items: {type: array, items: {type: object}}, pagination: {type: object}}}
+                          serverNow: {type: string, format: date-time}
+                          version: {type: integer}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Admin]
+      summary: C04 Host-desk check-in or undo (any time except a cancelled event)
+      description: "Not a status patch. Repeating the same state is a no-op. `REGISTRATION_NOT_CONFIRMED` is returned for a registration that is not confirmed. Audited as `checkin.set`."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [registrationId, state]
+              additionalProperties: false
+              properties:
+                registrationId: {type: string, format: uuid}
+                state: {type: string, enum: [checked_in, not_checked_in]}
+      responses:
+        '200':
+          description: Result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          registrationId: {type: string, format: uuid}
+                          checkedInAt: {type: string, format: date-time, nullable: true}
+                          counts: {type: object, properties: {arrived: {type: integer}, expected: {type: integer}}}
+                          serverNow: {type: string, format: date-time}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/payments:
+    get:
+      tags: [Admin]
+      summary: C13 Payments of an event (one row per payment order)
+      description: "Page of AdminPaymentRowDto. `id` is the payment id when a payment exists, else the order id. `mismatch` is `{mismatch: false}` or `{mismatch: true, kind, detail, detectedAt}` from unresolved mismatch rows. `capabilities.canRefund` carries a `reason` when disabled. Provider ids are visible to admins only."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {name: status, in: query, schema: {type: string, enum: [created, attempted, paid, failed, expired, refunded]}}
+        - {name: mismatch, in: query, schema: {type: boolean}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of payment rows (`meta.pagination`)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {type: object}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/recap:
+    get:
+      tags: [Admin]
+      summary: C16 Recap, gallery collection and archive flag
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+      responses:
+        '200':
+          description: EventRecapDto (eventId, recap, collectionId, archivePublished, archivePublishedAt, canPublishArchive, version, lastChange)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Admin]
+      summary: C16 Update the recap, gallery link or archive flag (completed events only)
+      description: "Partial, with `version` (409 VERSION_CONFLICT). Publishing the archive sets `archivePublishedAt`; saving a public event writes the `event/updated` revalidation row in the same transaction. Audited."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              additionalProperties: false
+              properties:
+                version: {type: integer, minimum: 0}
+                recap: {type: string, maxLength: 4000}
+                collectionId: {type: string, pattern: '^[0-9]+$', nullable: true, description: Media collection id (integer key sent as a string)}
+                publishArchive: {type: boolean}
+      responses:
+        '200':
+          description: The updated EventRecapDto
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/events/{eventId}/messages:
+    get:
+      tags: [Admin]
+      summary: C14 Message log with per-recipient delivery counts and channel health
+      description: "Latest 100 messages. `status` is derived from the recipients: queued, sending, delivered, partial_failure or failed. `delivered` counts stay 0 because the provider only confirms acceptance (state `sent`). A draft event is 404."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+      responses:
+        '200':
+          description: "MessageLogDto (messages[], channels[{channel, connected}], serverNow)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Admin]
+      summary: C14 Send a message to an audience (Idempotency-Key required, 202)
+      description: "Stores the message and its audience first and returns 202; the worker resolves recipients and delivers, one delivery row per registration (retries with backoff, 5 attempts). Plain text. Rejects an empty audience (400, `fields.audience`). 20 sends per hour per admin (429). Audited without the body."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audience, channel, subject, body]
+              additionalProperties: false
+              properties:
+                audience: {type: string, enum: [confirmed, waitlist, checked_in, first_timers]}
+                channel: {type: string, enum: [email]}
+                subject: {type: string, minLength: 1, maxLength: 150}
+                body: {type: string, minLength: 1, maxLength: 5000}
+      responses:
+        '202':
+          description: "Accepted: {id, status: queued, recipients, acceptedAt}"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {description: IDEMPOTENCY_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '429': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/messages/{messageId}:
+    get:
+      tags: [Admin]
+      summary: C14 One message with per-recipient delivery state (up to 500 recipients)
+      description: "Recipients are `{registrationId, name, state}` with `at` when sent and a fixed `reason` text when failed. Addresses are never returned."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {name: messageId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: MessageDetailDto (the log entry plus recipients[])
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/events/{eventId}/communications:
+    get:
+      tags: [Admin]
+      summary: C15 Per-event toggles for state-triggered messages
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+      responses:
+        '200':
+          description: "CommunicationsSettingsDto (triggers: {confirmation, reminder_24h, checkin_open, pairing_published, post_event}, channels: [email], version)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Admin]
+      summary: C15 Update trigger toggles
+      description: "Partial `triggers`, with `version` (409 VERSION_CONFLICT). A cancelled or completed event is 400. Bumps the editor version but writes no revalidation row (not public data). Same data as `communications` in E03/E04. Audited. The `confirmation` toggle is enforced when the confirmation email is queued; the other triggers are read by the scheduler."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              additionalProperties: false
+              properties:
+                version: {type: integer, minimum: 0}
+                triggers:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    confirmation: {type: boolean}
+                    reminder_24h: {type: boolean}
+                    checkin_open: {type: boolean}
+                    pairing_published: {type: boolean}
+                    post_event: {type: boolean}
+                channels: {type: array, items: {type: string, enum: [email]}, minItems: 1, maxItems: 1}
+      responses:
+        '200':
+          description: The updated CommunicationsSettingsDto
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/events/{eventId}/audit:
+    get:
+      tags: [Admin]
+      summary: C17 Event audit log (time ordered) or CSV export
+      description: "Entries are AuditEntryDto (id, at, actor {id, name}, action, object, summary). Only actions in the web audit vocabulary are listed. `?format=csv` returns `text/csv` (not the envelope), needs a step-up token, is limited to 10000 rows, is itself audited and prefixes any cell starting with = + - @ tab or CR with a single quote."
+      parameters:
+        - {$ref: '#/components/parameters/EventId'}
+        - {name: actor, in: query, schema: {type: string, format: uuid}}
+        - {name: action, in: query, schema: {type: string}}
+        - {name: from, in: query, description: ISO instant with offset, schema: {type: string, format: date-time}}
+        - {name: to, in: query, description: ISO instant with offset, schema: {type: string, format: date-time}}
+        - {name: format, in: query, schema: {type: string, enum: [csv]}}
+        - {name: X-Step-Up-Token, in: header, required: false, description: Required with format=csv, schema: {type: string}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of entries (`meta.pagination`), or the CSV file when format=csv
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {type: object}}
+            text/csv:
+              schema: {type: string}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {description: STEP_UP_REQUIRED (csv) or AUTH_REQUIRED, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/players:
+    get:
+      tags: [Admin]
+      summary: G01 Search players
+      description: "Page of AdminPlayerRowDto (id, name, email, city, role, status, eventsAttended, joinedAt), newest first. `q` matches name, email or phone (max 100 characters). Admin only."
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of players (`meta.pagination`)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {type: object}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /admin/players/{playerId}:
+    get:
+      tags: [Admin]
+      summary: G02 Player record
+      description: "AdminPlayerDto: the row plus phone, birthday, area, chessComHandle, fideId (null when not provided), `visibleFields`, `history` (up to 100 registrations), `ratings`, `canChangeRole` (disabled with a reason for your own account and the last admin) and `version`."
+      parameters:
+        - {name: playerId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: The player record
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/players/{playerId}/role:
+    put:
+      tags: [Admin]
+      summary: G03 Change a player's role (step-up)
+      description: "Requires `Idempotency-Key` and `X-Step-Up-Token`. Audited as `player.role_change`. 400 VALIDATION_FAILED (`fields.role`) for your own account, the last active admin, or a suspended account being promoted. The target's sessions end through the role check. Same role is a no-op."
+      parameters:
+        - {name: playerId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+        - {name: X-Step-Up-Token, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              additionalProperties: false
+              properties:
+                role: {type: string, enum: [player, admin]}
+      responses:
+        '200':
+          description: "ChangeRoleResult (id, role, changedAt)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {description: STEP_UP_REQUIRED or AUTH_REQUIRED, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {description: IDEMPOTENCY_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/payments:
+    get:
+      tags: [Admin]
+      summary: G04 Global payments ledger
+      description: "Page of AdminLedgerRowDto: the C13 row plus eventId, eventSlug, eventTitle. `id` is the payment id when a payment exists, else the order id. `from` and `to` are UTC dates (inclusive) on the last update. Provider ids are visible to admins only."
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [created, attempted, paid, failed, expired, refunded]}}
+        - {name: eventId, in: query, schema: {type: string, format: uuid}}
+        - {name: mismatch, in: query, schema: {type: boolean}}
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+      responses:
+        '200':
+          description: Page of ledger rows (`meta.pagination`)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: array, items: {type: object}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /admin/payments/reconcile:
+    post:
+      tags: [Admin]
+      summary: G06 Reconcile payments with the provider
+      description: "Compares up to 100 payments (least recently checked first) with the provider and records open mismatches (order, amount, currency, status, missing_at_provider). It never changes a payment, order or registration and does not duplicate an open mismatch. Audited as `payment.reconcile`."
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                eventId: {type: string, format: uuid}
+      responses:
+        '200':
+          description: "ReconcileResult (checked, mismatches, newMismatches, ranAt)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /admin/payments/{paymentId}/refund:
+    post:
+      tags: [Admin]
+      summary: G05 Refund a captured payment (step-up)
+      description: "Requires `Idempotency-Key` and `X-Step-Up-Token`. Full refund of the remaining balance unless `amountPaise` is given. The pending refund and the registration refund state are written in one transaction with the audit row (`payment.refund`); the provider call runs after the commit. `refundState` is `refunded` only when this refund is already processed, else `pending` until the provider confirms. A flagged (mismatched) payment cannot be refunded."
+      parameters:
+        - {name: paymentId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/IdempotencyKeyRequired'}
+        - {name: X-Step-Up-Token, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              additionalProperties: false
+              properties:
+                amountPaise: {type: integer, minimum: 1}
+                reason: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '200':
+          description: "RefundResult (paymentId, refundState, refundedPaise, currency, requestedAt)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {description: STEP_UP_REQUIRED or AUTH_REQUIRED, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {description: IDEMPOTENCY_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  /admin/settings:
+    get:
+      tags: [Admin]
+      summary: G07 Grouped non-secret settings and integration health
+      description: "SettingsDto: brand, auth, ratings, payments, notifications, eventDefaults, `integrations` ({google, razorpay, email, whatsapp} booleans only), version, updatedAt. Never returns a secret."
+      responses:
+        '200':
+          description: The settings
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Admin]
+      summary: G08 Partial settings update
+      description: "Partial groups and fields plus `version` (409 VERSION_CONFLICT). Only allow-listed keys are accepted; any other key (including `payments.currency` and anything credential-like) is rejected with 400 VALIDATION_FAILED. Audited as `settings.update`. Changing a public brand contact field (`supportEmail`, `deskContactHref`, `defaultCity`, `social`) writes `site/updated` revalidation rows for `footer` and `meta` in the same transaction. Enforced at runtime: `payments.holdMinutes`, `ratings.provisionalGames`, `auth.signupOpen`, `notifications.contactDestinationEmail`, `notifications.senderName`, `notifications.emailEnabled`. Returns the updated SettingsDto."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              additionalProperties: false
+              properties:
+                version: {type: integer, minimum: 0}
+                brand: {type: object}
+                auth: {type: object}
+                ratings: {type: object}
+                payments: {type: object}
+                notifications: {type: object}
+                eventDefaults: {type: object}
+      responses:
+        '200':
+          description: The updated SettingsDto
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {type: object}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {description: VERSION_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: signed access token
+  parameters:
+    PreviewKey:
+      name: X-Preview-Key
+      in: header
+      required: false
+      description: 'Server to server only. A valid key scoped to this exact item returns its draft with `Cache-Control: private, no-store` and `X-Robots-Tag: noindex`. An invalid, expired or out-of-scope key is ignored and the published response is returned.'
+      schema: {type: string, maxLength: 200}
+    CmsKey:
+      name: key
+      in: path
+      required: true
+      schema: {type: string, enum: [home, community, nav, footer, meta]}
+    StoryId:
+      name: storyId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    TestimonialId:
+      name: testimonialId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    Page:
+      name: page
+      in: query
+      schema: {type: integer, minimum: 1, default: 1}
+    PageSize:
+      name: page_size
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema: {type: string}
+    RegistrationId:
+      name: registrationId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      description: Event UUID (as returned in `event.id`)
+      schema: {type: string, format: uuid}
+    PairingId:
+      name: pairingId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    RoundId:
+      name: roundId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    Pool:
+      name: pool
+      in: path
+      required: true
+      schema: {type: string, enum: [blitz, rapid, classical]}
+    IdempotencyKeyRequired:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client generated UUID. Same key and body replays the original response.
+      schema: {type: string, format: uuid}
+  requestBodies:
+    RoundVersion:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [version]
+            additionalProperties: false
+            properties:
+              version: {type: integer, minimum: 0, description: The round `version` last read}
+  responses:
+    AdminCmsSectionOk:
+      description: The section with its draft and published copies
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: {$ref: '#/components/schemas/AdminCmsSection'}
+    AdminLegalOk:
+      description: The legal page with its draft and published copies
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: {$ref: '#/components/schemas/AdminLegalPage'}
+    CmsPublishOk:
+      description: Published
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      key: {type: string, description: Section key (S04 only)}
+                      page: {type: string, description: Legal page (S06 only)}
+                      status: {type: string, enum: [published]}
+                      publishedAt: {type: string, format: date-time}
+                      versionNumber: {type: integer, description: Number of the new history row}
+                      version: {type: integer, description: Draft version}
+                      publishedVersion: {type: integer, description: Version of the live row}
+    AdminStoryOk:
+      description: The story
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: {$ref: '#/components/schemas/AdminStory'}
+    AdminTestimonialOk:
+      description: The testimonial
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: {$ref: '#/components/schemas/AdminTestimonial'}
+    CmsStateOk:
+      description: New state of the story or testimonial
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: {type: string, format: uuid}
+                      slug: {type: string, description: Stories only}
+                      status: {type: string, enum: [draft, published]}
+                      publishedAt: {type: string, format: date-time, nullable: true, description: 'Stories only; null after unpublish'}
+                      at: {type: string, format: date-time, description: 'Testimonials only: time of the change'}
+                      version: {type: integer}
+    AdminRoundOk:
+      description: The round after the change
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: {$ref: '#/components/schemas/AdminRound'}
+    EmptyOk:
+      description: OK, `data` is null
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Envelope'}
+    ResultUpdate:
+      description: Updated result fragment
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      result: {$ref: '#/components/schemas/ResultState'}
+                      capabilities: {type: object, additionalProperties: {type: boolean}}
+                      serverNow: {type: string, format: date-time}
+                      version: {type: string}
+    Error:
+      description: |
+        Failure envelope. Codes: AUTH_REQUIRED, ADMIN_REQUIRED, EVENT_NOT_FOUND, REGISTRATION_NOT_OPEN, REGISTRATION_CLOSED,
+        EVENT_FULL, ALREADY_REGISTERED, PAYMENT_REQUIRED, PAYMENT_MISMATCH, INVALID_SIGNATURE, CHECKIN_WINDOW_CLOSED,
+        REGISTRATION_NOT_CONFIRMED, ROUND_NOT_FOUND, RESULTS_NOT_FINAL, ROUND_ALREADY_FINALIZED, VALIDATION_FAILED,
+        RATE_LIMITED, INVALID_CREDENTIALS, EMAIL_TAKEN, WEAK_PASSWORD, RESET_TOKEN_INVALID, HOLD_EXPIRED, SLUG_TAKEN,
+        SLUG_LOCKED, VERSION_CONFLICT, NOT_PUBLISHABLE, ASSET_IN_USE, NOT_FOUND, IDEMPOTENCY_CONFLICT, RESULT_NOT_ALLOWED,
+        CANCELLATION_NOT_ALLOWED, STEP_UP_REQUIRED, METHOD_NOT_ALLOWED, UNSUPPORTED_MEDIA_TYPE, STORAGE_UNAVAILABLE, INTERNAL_ERROR.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  schemas:
+    AdminPerson:
+      type: object
+      nullable: true
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+    AdminCmsSectionRow:
+      type: object
+      properties:
+        key: {type: string, enum: [home, community, nav, footer, meta]}
+        status: {type: string, enum: [clean, draft, published]}
+        hasUnpublishedChanges: {type: boolean}
+        version: {type: integer, description: Draft counter, 0 when there is no draft}
+        publishedAt: {type: string, format: date-time, nullable: true}
+        updatedAt: {type: string, format: date-time, description: 'Epoch when the section has neither a live copy nor a draft'}
+        updatedBy: {$ref: '#/components/schemas/AdminPerson'}
+    AdminCmsSectionContent:
+      type: object
+      nullable: true
+      description: One side of the side-by-side view (BE-14 D5)
+      properties:
+        key: {type: string, enum: [home, community, nav, footer, meta]}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+        content: {type: object, description: 'Public section shape: every `{collection: key}` reference is resolved to {mode, autoplay, intervalMs, items}. Drafts are still STORED and ACCEPTED (S03) with the reference form.'}
+    AdminCmsLastChange:
+      type: object
+      nullable: true
+      properties:
+        by: {type: object, properties: {id: {type: string, format: uuid}, name: {type: string}}}
+        at: {type: string, format: date-time}
+        summary: {type: string, nullable: true}
+    AdminCmsSection:
+      type: object
+      properties:
+        key: {type: string, enum: [home, community, nav, footer, meta]}
+        status: {type: string, enum: [clean, draft, published]}
+        hasUnpublishedChanges: {type: boolean}
+        version: {type: integer, description: Draft counter to send back on save}
+        draft: {allOf: [{$ref: '#/components/schemas/AdminCmsSectionContent'}], description: 'Wrapped {key, version, updatedAt, content}; null unless status is draft (unpublished edits)'}
+        published: {allOf: [{$ref: '#/components/schemas/AdminCmsSectionContent'}], description: Wrapped live copy, null when never published}
+        lastChange: {$ref: '#/components/schemas/AdminCmsLastChange'}
+        publishedAt: {type: string, format: date-time, nullable: true}
+        publishedVersion: {type: integer, nullable: true}
+        collections:
+          type: array
+          description: Media collections referenced by the working copy
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              key: {type: string}
+              name: {type: string}
+        updatedAt: {type: string, format: date-time}
+        updatedBy: {$ref: '#/components/schemas/AdminPerson'}
+        changeSummary: {type: string, nullable: true}
+    AdminLegalPage:
+      type: object
+      properties:
+        page: {type: string, enum: [privacy, terms, refund-policy]}
+        status: {type: string, enum: [clean, draft, published]}
+        hasUnpublishedChanges: {type: boolean}
+        version: {type: integer}
+        draft: {$ref: '#/components/schemas/AdminLegalContent'}
+        published: {$ref: '#/components/schemas/AdminLegalContent'}
+        publishedAt: {type: string, format: date-time, nullable: true}
+        publishedVersion: {type: integer, nullable: true}
+        updatedAt: {type: string, format: date-time, description: 'Latest of the live copy and the draft; epoch when the page has neither'}
+        lastChange: {$ref: '#/components/schemas/AdminCmsLastChange'}
+        updatedBy: {$ref: '#/components/schemas/AdminPerson'}
+        changeSummary: {type: string, nullable: true}
+    AdminLegalContent:
+      type: object
+      nullable: true
+      properties:
+        page: {type: string, enum: [privacy, terms, refund-policy]}
+        title: {type: string}
+        blocks: {type: array, items: {type: object}}
+        effectiveDate: {type: string, format: date}
+    AdminStoryInput:
+      type: object
+      additionalProperties: false
+      description: 'Create requires kind and title; `slug` is optional (a free slug is proposed from the title). On PATCH a draft may blank title, eyebrow and dek; `publishedOn` and `readingMinutes` accept null (no change). `collectionId` (media collection, integer key as a string, nullable) is what the web sends; `coverAssetId` is the legacy cover field.'
+      properties:
+        slug: {type: string, minLength: 3, maxLength: 80, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'}
+        kind: {type: string, enum: [club_notes, event_notes, rivalries]}
+        title: {type: string, minLength: 1, maxLength: 160}
+        eyebrow: {type: string, maxLength: 60}
+        dek: {type: string, maxLength: 300}
+        publishedOn: {type: string, format: date}
+        readingMinutes: {type: integer, minimum: 1, maximum: 120}
+        featured: {type: boolean}
+        coverAssetId: {type: string, format: uuid, nullable: true}
+        collectionId: {type: string, pattern: '^[0-9]+$', nullable: true, description: Story media collection}
+        body:
+          type: array
+          maxItems: 200
+          description: 'Closed block list: heading, paragraph, quote, image, list, link. No HTML.'
+          items: {type: object}
+    AdminStory:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        slug:
+          description: 'List rows: the slug string. Detail/create/update: the lock union `{lock: editable, value}` or `{lock: locked, value, lockedAt}` (web `slugFieldSchema`).'
+          oneOf:
+            - {type: string}
+            - type: object
+              properties:
+                lock: {type: string, enum: [editable, locked]}
+                value: {type: string, nullable: true}
+                lockedAt: {type: string, format: date-time}
+        kind: {type: string, enum: [club_notes, event_notes, rivalries]}
+        title: {type: string}
+        eyebrow: {type: string}
+        dek: {type: string}
+        status: {type: string, enum: [draft, published]}
+        publishedOn: {type: string, format: date}
+        readingMinutes: {type: integer}
+        featured: {type: boolean}
+        collectionId: {type: string, nullable: true, description: 'Detail only. The story media collection (integer key as a string) or null.'}
+        lastChange: {$ref: '#/components/schemas/AdminCmsLastChange'}
+        coverAssetId: {type: string, format: uuid, nullable: true}
+        slugLocked: {type: boolean, description: True once the story has been published}
+        firstPublishedAt: {type: string, format: date-time, nullable: true}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+        body: {type: array, items: {type: object}, description: Omitted from the list}
+    AdminTestimonialInput:
+      type: object
+      additionalProperties: false
+      description: 'Create requires only `quote`; name and descriptor are optional (publish needs both). On PATCH a draft may blank quote, name and descriptor. Send `consent` (the web form) or the legacy `consentAt`, not both.'
+      properties:
+        quote: {type: string, maxLength: 600, description: Stored exactly as sent}
+        name: {type: string, minLength: 1, maxLength: 80}
+        descriptor: {type: string, minLength: 1, maxLength: 120}
+        portraitAssetId: {type: string, format: uuid, nullable: true}
+        consent: {type: boolean, description: 'true records consent and the server stamps `consentAt` (an existing stamp is kept); false clears it. Withdrawing consent on a published testimonial is refused (NOT_PUBLISHABLE).'}
+        consentAt: {type: string, format: date-time, nullable: true, description: 'Legacy: when the person agreed to be quoted (not in the future)'}
+        sortOrder: {type: integer, minimum: 0, maximum: 1000}
+    AdminTestimonial:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        quote: {type: string}
+        name: {type: string}
+        descriptor: {type: string}
+        portraitAssetId: {type: string, format: uuid, nullable: true}
+        portrait:
+          type: object
+          nullable: true
+          description: Asset summary (id, src, width, height, alt, decorative, focal); null until a portrait is chosen
+        consentAt: {type: string, format: date-time, nullable: true}
+        sortOrder: {type: integer}
+        lastChange: {$ref: '#/components/schemas/AdminCmsLastChange'}
+        publishedAt: {type: string, format: date-time, description: 'Only when status is published (newest publish audit row, else updatedAt)'}
+        status: {type: string, enum: [draft, published]}
+        missing: {type: array, items: {type: string, enum: [quote, name, descriptor, portraitAssetId, consentAt]}, description: What blocks publishing}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+    MediaAsset:
+      type: object
+      description: Admin media asset (web `mediaAssetSchema`, BE-14 D4)
+      properties:
+        id: {type: string, format: uuid}
+        src: {type: string}
+        width: {type: integer}
+        height: {type: integer}
+        alt: {type: string, nullable: true, description: 'null when not set; empty string when decorative'}
+        decorative: {type: boolean}
+        focal:
+          type: object
+          properties:
+            x: {type: number, minimum: 0, maximum: 1}
+            y: {type: number, minimum: 0, maximum: 1}
+        credit: {type: string, nullable: true}
+        status:
+          type: string
+          enum: [draft, published, archived]
+          description: 'archived if archived; else published when referenced by any published entity (non-draft event, published story or testimonial, a collection shown by those or by a published site section); else draft'
+        archivedAt: {type: string, format: date-time, nullable: true}
+        missingAlt: {type: boolean}
+        contentType: {type: string, enum: [image/jpeg, image/png, image/webp, image/avif], description: 'Stored type; rows without one (seeded) are read from the src extension'}
+        sizeBytes: {type: integer, minimum: 1, description: 'Stored size, at least 1 (unknown sizes of seeded rows read as 1)'}
+        filename: {type: string}
+        usageCount: {type: integer, description: All references (uncapped)}
+        usedBy:
+          type: array
+          description: Capped at 20
+          items:
+            type: object
+            properties:
+              kind: {type: string, enum: [event, story, testimonial, site_section, collection]}
+              id: {type: string, description: 'Entity id; the section key for site_section; the integer id string for collection'}
+              label: {type: string}
+              field: {type: string}
+        uploadedBy:
+          type: object
+          description: The uploading admin; the nil UUID with name System for seeded assets
+          properties:
+            id: {type: string, format: uuid}
+            name: {type: string}
+        uploadedAt: {type: string, format: date-time}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+        warnings:
+          type: array
+          description: Present on complete and patch responses
+          items:
+            type: object
+            properties:
+              code: {type: string, enum: [ALT_MISSING]}
+              field: {type: string}
+              message: {type: string}
+    AdminMediaCollection:
+      type: object
+      description: Web `mediaCollectionAdminSchema`. `id` stays an integer primary key sent as a decimal string (web relaxes UUID to string, FE task)
+      properties:
+        id: {type: string, description: Integer key sent as a string}
+        key: {type: string}
+        name: {type: string}
+        mode: {type: string, enum: [static, carousel]}
+        autoplay: {type: boolean}
+        intervalMs: {type: integer}
+        usageCount: {type: integer, description: Events (media or gallery) and published site sections that show it}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+        lastChange:
+          type: object
+          nullable: true
+          properties:
+            by: {type: object, properties: {id: {type: string, format: uuid}, name: {type: string}}}
+            at: {type: string, format: date-time}
+            summary: {type: string, nullable: true}
+        itemCount: {type: integer}
+        items:
+          type: array
+          description: Ordered asset summaries; absent in the list response
+          items:
+            type: object
+            properties:
+              id: {type: string, format: uuid}
+              src: {type: string}
+              width: {type: integer}
+              height: {type: integer}
+              alt: {type: string, nullable: true}
+              decorative: {type: boolean}
+              focal: {type: object, properties: {x: {type: number}, y: {type: number}}}
+    Blocker:
+      type: object
+      required: [code, reason]
+      properties:
+        code: {type: string}
+        reason: {type: string}
+        field: {type: string, description: 'Dotted path starting with the step key, e.g. payment.pricePaise'}
+    CapabilityFlag:
+      type: object
+      required: [allowed]
+      properties:
+        allowed: {type: boolean}
+        reason: {type: string, description: Present when allowed is false}
+        blockers: {type: array, items: {$ref: '#/components/schemas/Blocker'}}
+    AdminEventRow:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        slug: {type: string, nullable: true}
+        type: {type: string}
+        status: {type: string}
+        startsAt: {type: string, format: date-time, nullable: true}
+        area: {type: string, description: 'Neighbourhood / location subtitle (e.g. Jubilee Hills); empty string when not set'}
+        city: {type: string, description: 'City name (e.g. Hyderabad); empty string when not set'}
+        capacity: {type: integer, nullable: true}
+        filled: {type: integer, description: Confirmed registrations}
+        pricePaise: {type: integer}
+        currency: {type: string, example: INR}
+        pairingMode: {type: string}
+        capabilities:
+          type: object
+          properties:
+            canPublish: {$ref: '#/components/schemas/CapabilityFlag'}
+            canUnpublish: {$ref: '#/components/schemas/CapabilityFlag'}
+            canCancel: {$ref: '#/components/schemas/CapabilityFlag'}
+            canEdit: {$ref: '#/components/schemas/CapabilityFlag'}
+        version: {type: integer}
+    BuilderDraft:
+      type: object
+      description: Event Builder resource (web `builderDraftSchema`). Text fields are empty strings, never null, in a draft.
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [draft, published, registration_open, sold_out, ongoing, completed, cancelled]}
+        basics:
+          type: object
+          properties:
+            title: {type: string}
+            slug:
+              type: object
+              description: '`{lock: editable, value}` or `{lock: locked, value, lockedAt}`'
+              properties:
+                lock: {type: string, enum: [editable, locked]}
+                value: {type: string, nullable: true}
+                lockedAt: {type: string, format: date-time}
+            type: {type: string}
+            promise: {type: string}
+            startsAt: {type: string, format: date-time, nullable: true}
+            endsAt: {type: string, format: date-time, nullable: true}
+            venueName: {type: string}
+            address: {type: string}
+            area: {type: string}
+            city: {type: string}
+            audience: {type: string, enum: [all_levels, beginner, solo]}
+        experience:
+          type: object
+          properties:
+            description: {type: string}
+            eyebrow: {type: string}
+            heading: {type: string}
+            body: {type: string}
+            highlights: {type: array, items: {type: object, properties: {title: {type: string}, body: {type: string}}}}
+            logistics: {type: array, items: {type: string}}
+            faq: {type: array, items: {type: object, properties: {question: {type: string}, answer: {type: string}}}}
+            hostedArrival: {type: boolean}
+        registration:
+          type: object
+          properties:
+            capacity: {type: integer, nullable: true}
+            waitlistEnabled: {type: boolean}
+            opensAt: {type: string, format: date-time, nullable: true}
+            closesAt: {type: string, format: date-time, nullable: true}
+            membershipRequired: {type: boolean}
+            askFirstTimer: {type: boolean}
+            minAge: {type: integer, nullable: true}
+        payment:
+          type: object
+          properties:
+            pricePaise: {type: integer}
+            currency: {type: string, example: INR}
+            refundWindowHours: {type: integer, nullable: true}
+            holdMinutes: {type: integer}
+        gameSystem:
+          type: object
+          description: '`pool` is present only when `rated` is true'
+          properties:
+            rated: {type: boolean}
+            pool: {type: string, enum: [blitz, rapid, classical]}
+            pairingMode: {type: string}
+            rounds: {type: integer, nullable: true}
+            timeControl: {type: string}
+        media:
+          type: object
+          properties:
+            collectionId: {type: string, pattern: '^[0-9]+$', nullable: true, description: Media collection id (integer key sent as a string)}
+            mode: {type: string, enum: [static, carousel]}
+        communications:
+          type: object
+          properties:
+            triggers:
+              type: object
+              additionalProperties: {type: boolean}
+            channels: {type: array, items: {type: string, enum: [email]}}
+        lockedFields: {type: array, items: {type: string, enum: [pricePaise, capacity, pairingMode, rated, pool, slug]}}
+        lockedReasons: {type: object, additionalProperties: {type: string}}
+        readiness:
+          type: object
+          description: '`{ready: true}` or `{ready: false, blockers: [...]}`'
+          properties:
+            ready: {type: boolean}
+            blockers: {type: array, items: {$ref: '#/components/schemas/Blocker'}}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        lastChange:
+          type: object
+          nullable: true
+          properties:
+            by: {type: object, properties: {id: {type: string, format: uuid}, name: {type: string}}}
+            at: {type: string, format: date-time}
+            summary: {type: string, nullable: true}
+    DashboardSummary:
+      type: object
+      properties:
+        event:
+          type: object
+          nullable: true
+          properties:
+            id: {type: string, format: uuid}
+            slug: {type: string}
+            title: {type: string}
+            status: {type: string}
+            startsAt: {type: string, format: date-time}
+            confirmed: {type: integer}
+            capacity: {type: integer, nullable: true}
+            firstTimers: {type: integer}
+        pendingPayments:
+          type: object
+          properties:
+            count: {type: integer}
+            amountPaise: {type: integer}
+            currency: {type: string, example: INR}
+        websiteHealth:
+          type: object
+          properties:
+            state: {type: string, enum: [ok, degraded, down]}
+            lastPublishedAt: {type: string, format: date-time, nullable: true}
+            pendingRevalidations: {type: integer}
+        attention:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            properties:
+              kind: {type: string, enum: [unreconciled_payment, media_missing_alt, testimonial_missing_consent, capacity_warning]}
+              message: {type: string}
+              count: {type: integer}
+              href: {type: string, example: /admin/payments?filter=mismatch}
+        serverNow: {type: string, format: date-time}
+    Meta:
+      type: object
+      properties:
+        request_id: {type: string}
+        timestamp: {type: string, format: date-time}
+        pagination:
+          type: object
+          nullable: true
+          properties:
+            page: {type: integer}
+            page_size: {type: integer}
+            total: {type: integer}
+            total_pages: {type: integer}
+    AdminRatingProcessing:
+      oneOf:
+        - type: object
+          required: [status]
+          properties: {status: {type: string, enum: [not_rated]}}
+        - type: object
+          required: [status, enqueuedAt]
+          properties:
+            status: {type: string, enum: [pending]}
+            enqueuedAt: {type: string, format: date-time}
+        - type: object
+          required: [status, processedAt]
+          properties:
+            status: {type: string, enum: [complete]}
+            processedAt: {type: string, format: date-time}
+    AdminBoardPlayer:
+      type: object
+      required: [registrationId, name, rating, firstTimer]
+      properties:
+        registrationId: {type: string, format: uuid}
+        name: {type: string, maxLength: 80}
+        rating: {type: integer, minimum: 0, maximum: 4000, nullable: true}
+        firstTimer: {type: boolean}
+    AdminResult:
+      type: object
+      required: [state]
+      description: "Discriminated by `state`. none has no other field. submitted adds outcome, submittedBy (white, black or admin) and submittedAt. disputed adds outcome, submittedBy, disputedBy (white or black) and note. final adds outcome, decidedBy (players or admin) and adminReason (nullable)."
+      properties:
+        state: {type: string, enum: [none, submitted, disputed, final]}
+        outcome: {type: string, enum: [white, black, draw]}
+        submittedBy: {type: string, enum: [white, black, admin]}
+        submittedAt: {type: string, format: date-time}
+        disputedBy: {type: string, enum: [white, black]}
+        note: {type: string, nullable: true}
+        decidedBy: {type: string, enum: [players, admin]}
+        adminReason: {type: string, nullable: true}
+    AdminPairing:
+      type: object
+      required: [kind, pairingId, board]
+      description: "Discriminated by `kind`. A game has white, black, result and capabilities (canEnterResult, canResolveDispute). A bye has player."
+      properties:
+        kind: {type: string, enum: [game, bye]}
+        pairingId: {type: string, format: uuid}
+        board: {type: integer, minimum: 1, maximum: 500}
+        white: {$ref: '#/components/schemas/AdminBoardPlayer'}
+        black: {$ref: '#/components/schemas/AdminBoardPlayer'}
+        result: {$ref: '#/components/schemas/AdminResult'}
+        capabilities:
+          type: object
+          properties:
+            canEnterResult: {$ref: '#/components/schemas/CapabilityFlag'}
+            canResolveDispute: {$ref: '#/components/schemas/CapabilityFlag'}
+        player: {$ref: '#/components/schemas/AdminBoardPlayer'}
+    AdminRound:
+      type: object
+      required: [id, roundNo, state, method, pairings, unresolvedResults, pairingVersion, capabilities, version, updatedAt]
+      description: "publishedAt is present from published on, startedAt from live on, finalisedAt and ratingProcessing when completed."
+      properties:
+        id: {type: string, format: uuid}
+        roundNo: {type: integer, minimum: 1, maximum: 100}
+        state: {type: string, enum: [draft, published, live, completed, void]}
+        method: {type: string, enum: [social_balanced, swiss, round_robin, none]}
+        pairings: {type: array, maxItems: 500, items: {$ref: '#/components/schemas/AdminPairing'}}
+        unresolvedResults: {type: integer, minimum: 0}
+        pairingVersion: {type: integer, minimum: 0}
+        capabilities:
+          type: object
+          properties:
+            canEdit: {$ref: '#/components/schemas/CapabilityFlag'}
+            canPublish: {$ref: '#/components/schemas/CapabilityFlag'}
+            canStart: {$ref: '#/components/schemas/CapabilityFlag'}
+            canFinalise: {$ref: '#/components/schemas/CapabilityFlag'}
+        version: {type: integer, minimum: 0}
+        updatedAt: {type: string, format: date-time}
+        publishedAt: {type: string, format: date-time}
+        startedAt: {type: string, format: date-time}
+        finalisedAt: {type: string, format: date-time}
+        ratingProcessing: {$ref: '#/components/schemas/AdminRatingProcessing'}
+    Envelope:
+      type: object
+      properties:
+        success: {type: boolean, example: true}
+        message: {type: string, nullable: true}
+        data: {nullable: true}
+        error: {nullable: true}
+        meta: {$ref: '#/components/schemas/Meta'}
+    ErrorEnvelope:
+      type: object
+      properties:
+        success: {type: boolean, example: false}
+        message: {nullable: true}
+        data: {nullable: true}
+        error:
+          type: object
+          properties:
+            code: {type: string, example: VALIDATION_FAILED}
+            detail: {type: string}
+            fields:
+              type: object
+              nullable: true
+              additionalProperties: {type: array, items: {type: string}}
+            retry_after: {type: integer, nullable: true}
+            reason: {type: string, nullable: true}
+        meta: {$ref: '#/components/schemas/Meta'}
+    Rating:
+      type: object
+      properties:
+        pool: {type: string, enum: [blitz, rapid, classical]}
+        rating: {type: integer}
+        games: {type: integer}
+        provisional: {type: boolean}
+    Me:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        email: {type: string, format: email}
+        role: {type: string, enum: [player, admin]}
+        profileComplete: {type: boolean}
+        onboardingDone: {type: boolean}
+        city: {type: string, nullable: true}
+        ratings: {type: array, items: {$ref: '#/components/schemas/Rating'}}
+    TokenResponse:
+      type: object
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          properties:
+            accessToken: {type: string}
+            refreshToken: {type: string, description: Body mode only}
+        meta: {$ref: '#/components/schemas/Meta'}
+    AuthResponse:
+      type: object
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          properties:
+            user: {$ref: '#/components/schemas/Me'}
+            accessToken: {type: string}
+            refreshToken: {type: string, description: Body mode only}
+        meta: {$ref: '#/components/schemas/Meta'}
+    Profile:
+      type: object
+      properties:
+        name: {type: string}
+        email: {type: string}
+        city: {type: string, nullable: true}
+        area: {type: string, nullable: true}
+        phone: {type: string, nullable: true}
+        birthday: {type: string, format: date, nullable: true}
+        chessComHandle: {type: string, nullable: true}
+        fideId: {type: string, nullable: true}
+        publicIdentity:
+          type: object
+          properties:
+            showDisplayName: {type: boolean}
+            showRatings: {type: boolean}
+            showChessComHandle: {type: boolean}
+            showCityChapter: {type: boolean}
+    Media:
+      type: object
+      nullable: true
+      properties:
+        src: {type: string}
+        width: {type: integer}
+        height: {type: integer}
+        focal:
+          type: object
+          properties:
+            x: {type: number}
+            y: {type: number}
+        decorative: {type: boolean}
+        alt: {type: string}
+        blurDataUrl: {type: string}
+    MediaCollection:
+      type: object
+      properties:
+        mode: {type: string, enum: [static, carousel]}
+        autoplay: {type: boolean}
+        intervalMs: {type: integer}
+        items: {type: array, items: {$ref: '#/components/schemas/Media'}}
+    EventCard:
+      type: object
+      properties:
+        slug: {type: string}
+        title: {type: string}
+        promise: {type: string}
+        type: {type: string}
+        audience: {type: string}
+        status: {type: string}
+        startsAt: {type: string, format: date-time}
+        endsAt: {type: string, format: date-time}
+        area: {type: string}
+        city: {type: string}
+        format: {type: string}
+        price:
+          type: object
+          properties:
+            pricePaise: {type: integer}
+            currency: {type: string, example: INR}
+        rated: {type: boolean}
+        firstTimerCount: {type: integer}
+        placesLeftHint: {type: integer, nullable: true}
+        cover: {$ref: '#/components/schemas/Media'}
+        archivePublished: {type: boolean}
+        version: {type: integer, format: int64}
+    EventDetail:
+      allOf:
+        - $ref: '#/components/schemas/EventCard'
+        - type: object
+          properties:
+            description: {type: string}
+            venue: {type: object, additionalProperties: true}
+            experience: {type: object, additionalProperties: true}
+            atAGlance: {type: object, additionalProperties: true}
+            pairingMode: {type: string}
+            rating: {type: object, additionalProperties: true}
+            registration:
+              type: object
+              properties:
+                opensAt: {type: string, format: date-time, nullable: true}
+                closesAt: {type: string, format: date-time, nullable: true}
+                waitlistEnabled: {type: boolean}
+            logistics: {type: object, additionalProperties: true}
+            faq: {type: array, items: {type: object, additionalProperties: true}}
+            media: {$ref: '#/components/schemas/MediaCollection'}
+            cancelled: {type: object, nullable: true, additionalProperties: true}
+            archive: {type: object, nullable: true, additionalProperties: true}
+            updatedAt: {type: string, format: date-time}
+    StoryCard:
+      type: object
+      properties:
+        slug: {type: string}
+        kind: {type: string}
+        title: {type: string}
+        dek: {type: string}
+        publishedOn: {type: string, format: date}
+        readingMinutes: {type: integer}
+        featured: {type: boolean}
+        cover: {$ref: '#/components/schemas/Media'}
+        version: {type: integer, format: int64}
+    EventLink:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        slug: {type: string}
+        title: {type: string}
+        startsAt: {type: string, format: date-time}
+        area: {type: string}
+        status: {type: string}
+    Payment:
+      type: object
+      nullable: true
+      properties:
+        orderState: {type: string}
+        refundState: {type: string}
+        amountPaise: {type: integer}
+        currency: {type: string, example: INR}
+    Registration:
+      type: object
+      description: Discriminated on `status` (confirmed, pending, confirming, waitlist, cancelled, refunded).
+      properties:
+        id: {type: string, format: uuid}
+        eventId: {type: string, format: uuid}
+        eventSlug: {type: string}
+        createdAt: {type: string, format: date-time}
+        status: {type: string, enum: [confirmed, pending, confirming, waitlist, cancelled, refunded]}
+        holdExpiresAt: {type: string, format: date-time}
+        serverNow: {type: string, format: date-time}
+        position: {type: integer}
+        offer:
+          type: object
+          nullable: true
+          properties:
+            expiresAt: {type: string, format: date-time}
+            serverNow: {type: string, format: date-time}
+        cancelledAt: {type: string, format: date-time}
+        refundedAt: {type: string, format: date-time}
+        payment: {$ref: '#/components/schemas/Payment'}
+    PublicIdentity:
+      type: object
+      properties:
+        displayName: {type: string}
+        initials: {type: string}
+        rating:
+          type: object
+          nullable: true
+          properties:
+            pool: {type: string}
+            value: {type: integer}
+        cityChapter: {type: string, nullable: true}
+    CheckIn:
+      type: object
+      description: status is not_open, open, checked_in, manual_required or closed.
+      properties:
+        status: {type: string}
+        opensAt: {type: string, format: date-time}
+        closesAt: {type: string, format: date-time}
+        at: {type: string, format: date-time}
+        reason: {type: string}
+    ResultState:
+      type: object
+      properties:
+        state: {type: string, enum: [none, submitted, awaiting_confirmation, final, disputed]}
+        outcome: {type: string, enum: [white, black, draw]}
+        submittedBy: {type: string, enum: [me, opponent]}
+    PoolRating:
+      type: object
+      properties:
+        pool: {type: string}
+        state: {type: string, description: unrated, provisional or established}
+        rating: {type: integer}
+        rd: {type: integer}
+        games: {type: integer}
+        lastChange: {type: integer, nullable: true}

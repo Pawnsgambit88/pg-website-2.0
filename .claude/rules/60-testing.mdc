@@ -1,0 +1,12 @@
+---
+description: Testing discipline rules
+globs: ["backend/**/tests/**", "web/**/*.test.*", "web/**/*.spec.*"]
+---
+
+# Testing Rules
+
+- Backend: pytest + pytest-django. Tests in `<app>/tests/`.
+- Frontend (web): Vitest + Testing Library + Playwright. Unit/component tests alongside components in `web/src/`; e2e tests in `web/e2e/`.
+- Every new endpoint must have: success, validation error, and auth error tests.
+- Every new component must have: render, interaction, state and error tests; axe accessibility assertion.
+- Coverage must not decrease on merge. Run `npm run check` before every handoff.

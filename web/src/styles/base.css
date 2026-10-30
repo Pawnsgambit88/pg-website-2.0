@@ -1,0 +1,110 @@
+/*
+ * Base layer (TASK-010). Element defaults only; components use utilities.
+ * Tailwind preflight already resets margins, borders, and img/svg display and max-width.
+ */
+@layer base {
+  :root {
+    --gutter: var(--spacing-gutter-mobile);
+    /* Focus ring: copper-dark on light surfaces (4.78+ on sand and parchment); light variant on forest. */
+    --focus-ring: var(--color-copper-dark);
+  }
+
+  @media (min-width: 720px) {
+    :root {
+      --gutter: var(--spacing-gutter-desktop);
+    }
+  }
+
+  html {
+    background-color: var(--color-parchment);
+    color: var(--color-ink);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* Anchors and focused fields stay clear of the sticky header and any sticky bottom bar. */
+    scroll-padding-top: calc(var(--spacing-header) + var(--spacing) * 4);
+    scroll-padding-bottom: calc(var(--sticky-h, 0px) + env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
+  body {
+    background-color: var(--color-parchment);
+    color: var(--color-ink);
+    font-family: var(--font-ui);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Headings never cause horizontal scroll at 320px or 200% zoom. */
+  h1,
+  h2,
+  h3 {
+    overflow-wrap: break-word;
+  }
+
+  ::selection {
+    background-color: var(--color-copper-soft);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 4px;
+  }
+
+  /* Dark surfaces: utility surface-dark, or this attribute when only the ring is needed. */
+  [data-surface='dark'] {
+    --focus-ring: var(--color-copper-soft);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    letter-spacing: inherit;
+  }
+
+  button,
+  a,
+  summary,
+  label,
+  [role='button'] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Text inputs are at least 16px on small screens so iOS Safari does not zoom on focus. */
+  @media (max-width: 719.98px) {
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='file']),
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+
+  /* Field focus keeps the border change and adds the soft halo; the outline above remains for keyboard users. */
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    box-shadow: var(--shadow-field-focus);
+  }
+
+  /* Reduced motion removes non-essential animation, transitions, smooth scroll and parallax. Meaning is never
+     animation-only, so the end state is always rendered. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

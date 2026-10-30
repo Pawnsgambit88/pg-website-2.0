@@ -1,0 +1,255 @@
+/*
+ * PG design tokens (Tailwind v4, CSS-first). TASK-010.
+ * Source of truth: "Frontend reference/design-tokens.json" v2.1, plus the extra variables in
+ * "Frontend reference/assets/styles.css" (:root lines 2-23 and 675-688). scripts/check-tokens.ts fails
+ * if this file and the JSON diverge. Tokens only: no hex, rgb() or arbitrary values in components.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * EXTRA REFERENCE VARIABLES (not in design-tokens.json)
+ * ---------------------------------------------------------------------------------------------
+ *  reference variable / value                token
+ *  --paper-deep   #ded3c3                    paper-deep (deeper sand)
+ *  --forest-soft  #314438                    forest-soft
+ *  --forest-muted #496052                    forest-muted
+ *  --copper-soft  #d19a75                    copper-soft (text and focus ring on forest surfaces)
+ *  --copper-pale  #ead0bc                    copper-pale (tint fill)
+ *  --admin-bg     #f2eee6                    admin-bg
+ *  --admin-panel  #faf7f1                    admin-panel
+ *  --line / --line-light / --admin-line      line / line-light / line-admin (colour-mix of ink 14%, parchment 20%, ink 12%)
+ *  --space-1 ... --space-24                  spacing scale through --spacing: 4px (see SPACING)
+ *  --control-h 48px                          spacing-control
+ *  --sidebar-w 248px, --admin-sidebar-w 264px  spacing-sidebar, spacing-sidebar-admin
+ *  --z-header/-overlay/-sidebar/-toast       z-header 100, z-overlay 210, z-sidebar 220, z-toast 400
+ *  --shadow, --ease, --radius                shadow-brand, ease-brand, radius-public
+ *  #fffaf3 (field fill)                      field
+ *  #fff7ef (text on copper)                  warm-white
+ *  #4d4941 (field label)                     ink-soft
+ *  #2d593c #7b561d #7a302a #7e4325 (badge text)  success-ink, warning-ink, danger-ink, copper-ink
+ *  rgba(244,239,230,.7) (text on dark)       parchment-muted
+ *  rgba(23,22,20,.10) shadow tint            colour-mix of ink 10% (same value)
+ *
+ * ---------------------------------------------------------------------------------------------
+ * DRIFT AND DEVIATIONS FROM THE REFERENCE
+ * ---------------------------------------------------------------------------------------------
+ *  - parchment-soft: JSON #FBF8F2 wins over the reference CSS #fbf8f1 (1 unit, imperceptible).
+ *  - #d9a37f (.eyebrow--light) is folded into copper-soft #d19a75 (one token fewer; 6.08 -> 5.50 on forest, still AA).
+ *  - About 40 one-off greys (#847d72, #817a70 ...) are not tokens. Use muted on parchment, parchment-muted on forest.
+ *  - Focus ring: reference is 3px copper. Here copper-dark (5.56 on parchment) and copper-soft on forest (5.50),
+ *    because copper on sand is only 3.05.
+ *  - ::selection: reference is parchment on copper (3.55). Here ink on copper-soft (7.40).
+ *  - Fonts: JSON fallbacks (Arial Narrow ...) are replaced by next/font size-adjusted fallbacks (ASSET-INVENTORY 1:
+ *    Arial Narrow is absent on iOS, Android and macOS). TASK-011 must emit the variables --font-newsreader,
+ *    --font-anek-latin and --font-fragment-mono. Do NOT name them --font-display / --font-ui / --font-mono: those are
+ *    the tokens defined below and would create a cycle.
+ *  - Body is 17px at every width (task spec). The reference drops body to 16px under 720px; if design wants that, it
+ *    is a one-line change in base.css.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * CONTRAST TABLE (WCAG 2.2, computed from the values; AA = 4.5 normal text, 3.0 large text and UI components)
+ * ---------------------------------------------------------------------------------------------
+ *  text on surface                                      ratio             verdict
+ *  ink on parchment / sand / parchment-soft             15.79/13.57/17.06 AAA
+ *  forest on parchment / sand                           11.74/10.09       AAA (secondary button, headings)
+ *  parchment on forest / forest-dark                    11.74/14.17       AAA (primary button, dark sections)
+ *  copper-dark on parchment / parchment-soft / sand     5.56/6.01/4.78    AA  (eyebrow, text-link, badges)
+ *  copper-dark on copper-pale                           4.32              FAIL normal text: use ink or forest there
+ *  copper-dark on paper-deep                            4.31              FAIL normal text: use ink or forest there
+ *  warm-white on copper-dark                            6.01              AA
+ *  muted on parchment / parchment-soft                  4.85/5.24         AA
+ *  muted on admin-bg / admin-panel / field              4.80/5.19/5.35    AA
+ *  muted on sand                                        4.17              FAIL: never use muted on sand (paper-deep 3.76)
+ *  ink-soft on parchment / field                        7.82/8.62         AAA (field labels)
+ *  parchment-muted (70%) on forest                      6.59              AA
+ *  copper-soft on forest / forest-dark                  5.50/6.64         AA  (eyebrow on dark, focus ring on dark)
+ *  stone on forest / forest-dark                        6.15/7.42         AA
+ *  stone on parchment                                   1.91              borders and dividers only, never text
+ *  success on parchment / parchment on success          5.31              AA
+ *  danger on parchment / sand / parchment on danger     6.48/5.57/6.48    AA
+ *  warning on parchment / parchment on warning          3.82              FAIL as small text: warning is fill/icon only,
+ *                                                                         text uses warning-ink
+ *  success-ink, warning-ink, danger-ink, copper-ink on their badge tint over parchment
+ *                                                       6.55/5.44/7.35/6.33  AA
+ *  copper fills (accent):
+ *  copper on parchment / sand / forest                  3.55/3.05/3.31    UI-component and large text only (3.0)
+ *  warm-white on copper (reference .button--copper)     3.84              FAIL for 0.72rem button text
+ *  ink on copper                                        4.45              FAIL by 0.05
+ *  OPEN ISSUE for design sign-off (TASK-025 Button): no text colour reaches 4.5 on the copper fill. Recommended copper
+ *  button: copper-dark fill + warm-white text (6.01). Tokens are not changed silently here.
+ *  non-text: focus ring copper-dark on parchment/sand 5.56/4.78, copper-soft on forest 5.50 (all >= 3.0).
+ *  line (ink 14%) on parchment is 1.33: decorative hairline only. Field boundaries also change to forest on focus and
+ *  always have visible labels, so the line is never the sole cue.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * BREAKPOINT MAPPING (reference max-width queries -> mobile-first min-width tokens)
+ * ---------------------------------------------------------------------------------------------
+ *  xs 480   reference 520, 480        compact type and gutters, one-column metadata
+ *  sm 720   reference 780, 720, 640   single column; ResponsiveTable becomes labelled rows; gutter 20 -> 36
+ *  md 960   reference 960, 900, 880   split layouts stack; header nav becomes a menu
+ *  lg 1200  reference 1200, 1180, 1120  large grids reduce
+ *  xl 1440  shell maximum
+ *  Reference queries are max-width (inclusive); Tailwind variants are min-width (inclusive), so a viewport of exactly
+ *  720, 960 or 1200 gets the larger layout (1px difference). The reference "(min-width:1100px) and (min-height:760px)"
+ *  hero fit is dropped on purpose (RESPONSIVE-BEHAVIOR: the hero is never a full-screen gate). Intermediate
+ *  breakpoints are allowed only with a comment that justifies them.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * SPACING
+ * ---------------------------------------------------------------------------------------------
+ *  --spacing is 4px. The approved scale 4/8/12/16/24/32/48/64/96 equals the multipliers 1/2/3/4/6/8/12/16/24
+ *  (p-1 ... p-24). Tailwind cannot forbid other multipliers (p-5 = 20px): that is enforced by review and by
+ *  check-tokens (arbitrary values). The 20px mobile gutter is a layout token, not a spacing step.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * HERO HEADING (AC-6, to verify in the browser at 320px and 200% zoom)
+ * ---------------------------------------------------------------------------------------------
+ *  --text-hero floor is 3.4rem (54.4px). "Better company." has 15 characters; at a 280px content width (320 - 2*20)
+ *  the longest word "company." is about 8 characters of Newsreader at roughly 0.45em each, about 200px, so it fits, and
+ *  overflow-wrap: break-word in base.css is the safety net. If a real render overflows, propose a lower floor to
+ *  design (for example 3rem) rather than changing the token silently.
+ */
+
+/* `static` emits every token as a CSS variable even when no utility uses it, so a token page and check-tokens can read
+   them all. */
+@theme static {
+   --color-*: initial;
+
+   /* Palette (design-tokens.json "colors") */
+   --color-parchment: #f4efe6;
+   --color-parchment-soft: #fbf8f2;
+   --color-sand: #e7ded0;
+   --color-forest: #243228;
+   --color-forest-dark: #17231c;
+   --color-ink: #171614;
+   --color-copper: #b86a3b;
+   --color-copper-dark: #8f4e2d;
+   --color-stone: #b9ae9d;
+   --color-muted: #6c685f;
+   --color-success: #486a4f;
+   --color-warning: #9d7033;
+   --color-danger: #8d3c35;
+
+   /* Extra reference colours (header table) */
+   --color-paper-deep: #ded3c3;
+   --color-forest-soft: #314438;
+   --color-forest-muted: #496052;
+   --color-copper-soft: #d19a75;
+   --color-copper-pale: #ead0bc;
+   --color-admin-bg: #f2eee6;
+   --color-admin-panel: #faf7f1;
+   --color-field: #fffaf3;
+   --color-warm-white: #fff7ef;
+   --color-ink-soft: #4d4941;
+   --color-success-ink: #2d593c;
+   --color-warning-ink: #7b561d;
+   --color-danger-ink: #7a302a;
+   --color-copper-ink: #7e4325;
+
+   /* Lines and translucent text */
+   --color-line: color-mix(in srgb, var(--color-ink) 14%, transparent);
+   --color-line-light: color-mix(in srgb, var(--color-parchment) 20%, transparent);
+   --color-line-admin: color-mix(in srgb, var(--color-ink) 12%, transparent);
+   --color-parchment-muted: color-mix(in srgb, var(--color-parchment) 70%, transparent);
+
+   /* Type scale. text-hero, text-section, text-page-intro, text-body, text-label, text-eyebrow, text-button set size,
+     line-height, tracking and weight together. Family and case are not theme keys: pair with font-display / font-mono,
+     or use the type-eyebrow and type-button utilities. */
+   --text-hero: clamp(3.4rem, 7.2vw, 7.5rem);
+   --text-hero--line-height: 0.92;
+   --text-hero--letter-spacing: -0.045em;
+   --text-hero--font-weight: 430;
+   --text-section: clamp(2.4rem, 4.4vw, 5rem);
+   --text-section--line-height: 0.92;
+   --text-section--letter-spacing: -0.045em;
+   --text-section--font-weight: 430;
+   --text-page-intro: clamp(2.2rem, 4vw, 4.2rem);
+   --text-page-intro--line-height: 0.92;
+   --text-page-intro--letter-spacing: -0.045em;
+   --text-page-intro--font-weight: 430;
+   --text-body: 17px;
+   --text-body--line-height: 1.48;
+   --text-label: 0.78rem;
+   --text-label--line-height: 1.3;
+   --text-eyebrow: 0.72rem;
+   --text-eyebrow--line-height: 1.3;
+   --text-eyebrow--letter-spacing: 0.12em;
+   --text-button: 0.72rem;
+   --text-button--line-height: 1.3;
+   --text-button--letter-spacing: 0.06em;
+
+   --tracking-display: -0.045em;
+   --tracking-eyebrow: 0.12em;
+   --tracking-button: 0.06em;
+   --leading-display: 0.92;
+   --leading-body: 1.48;
+   --font-weight-editorial: 430;
+   /* Newsreader headings */
+   --font-weight-strong: 650;
+   /* Anek Latin UI headings and active nav */
+
+   /* Spacing: 4px unit; approved scale is multipliers 1/2/3/4/6/8/12/16/24 */
+   --spacing: 4px;
+
+   /* Layout. Spacing-namespace keys give w-/h-/min-h-/p-... utilities (min-h-control, w-sidebar). */
+   --container-shell: 1440px;
+   --spacing-gutter-mobile: 20px;
+   --spacing-gutter-desktop: 36px;
+   --spacing-sidebar: 248px;
+   --spacing-sidebar-admin: 264px;
+   --spacing-control: 48px;
+   --spacing-tap: 44px;
+   --spacing-header: 72px;
+   /* reference sticky header height, used for scroll-padding-top */
+
+   /* Breakpoints, mobile-first (mapping table above) */
+   --breakpoint-*: initial;
+   --breakpoint-xs: 480px;
+   --breakpoint-sm: 720px;
+   --breakpoint-md: 960px;
+   --breakpoint-lg: 1200px;
+   --breakpoint-xl: 1440px;
+
+   /* Radii: public 2px, operational maximum 6px */
+   --radius-*: initial;
+   --radius-none: 0;
+   --radius-public: 2px;
+   --radius-operational: 6px;
+   --radius-full: 9999px;
+   /* avatars and status dots only */
+
+   /* Shadows */
+   --shadow-*: initial;
+   --shadow-brand: 0 24px 70px color-mix(in srgb, var(--color-ink) 10%, transparent);
+   --shadow-field-focus: 0 0 0 3px color-mix(in srgb, var(--color-forest) 8%, transparent);
+
+   /* Motion: controls 180-240ms, editorial reveal 500-800ms */
+   --ease-brand: cubic-bezier(0.2, 0.8, 0.2, 1);
+   --default-transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+   --default-transition-duration: 200ms;
+   --duration-control-fast: 180ms;
+   --duration-control: 200ms;
+   --duration-control-slow: 240ms;
+   --duration-reveal: 600ms;
+   --duration-reveal-slow: 800ms;
+   --reveal-distance: 16px;
+
+   /* Layering */
+   --z-header: 100;
+   --z-overlay: 210;
+   --z-sidebar: 220;
+   --z-toast: 400;
+
+   /* content-visibility intrinsic block sizes. PLACEHOLDERS: each consuming task measures its real row or card height
+     and overrides --cv-h locally so the scrollbar does not jump. */
+   --cv-h-row: 72px;
+   --cv-h-card: 320px;
+   --cv-h-section: 640px;
+}
+
+/* Font families resolve to the CSS variables emitted by next/font (TASK-011). The inner fallback keeps the declaration
+   valid before the variable exists. No @font-face and no remote font import here. */
+@theme inline {
+   --font-*: initial;
+   --font-display: var(--font-newsreader, Georgia), Georgia, serif;
+   --font-ui: var(--font-anek-latin, Arial), Arial, sans-serif;
+   --font-mono: var(--font-fragment-mono, ui-monospace), ui-monospace, monospace;
+}

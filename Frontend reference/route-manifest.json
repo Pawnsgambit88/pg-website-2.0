@@ -1,0 +1,7 @@
+{
+  "public": ["/", "/play", "/events/:slug", "/past-events", "/community", "/stories", "/contact", "/privacy", "/terms", "/refund-policy"],
+  "auth": ["/login", "/auth/callback", "/reset-password", "/welcome", "/events/:slug/register"],
+  "player": ["/app", "/app/events", "/app/events/:id", "/app/rating", "/app/profile"],
+  "admin": ["/admin", "/admin/content", "/admin/media", "/admin/stories", "/admin/testimonials", "/admin/events", "/admin/events/new", "/admin/events/:id", "/admin/players", "/admin/payments", "/admin/settings"],
+  "handoff": ["/handoff", "/handoff/design-system", "/handoff/states"]
+}
